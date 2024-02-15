@@ -1,7 +1,7 @@
 Table name: `k3_families`
 
 | Column    | Type    | Description    |
-|  : ----------- | : -------------- | : --------------- |
+| ----------- | -------------- | --------------- |
 | picard_lattice | text |  label of the indefinite lattice  isometric to Pic(X) |
 | polarized_lattice_genus | text |  label of the genus of the positive definite lattice L in the decomposition Pic(X) = U + L.  If there is no such decomposition, this field is null |
 | num_elliptic_surfaces | smallint | number of elliptic surfaces isomorphic to X |
