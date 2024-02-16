@@ -282,42 +282,7 @@ def decode_rank(c):
     assert (ord('A') <= ord(c) <= ord('Z'))
     return ord(c) - ord('A') + 10 + 26
 
-def genus_symbol_from_label(label):
-    '''
-    Returns a genus symbol corresponding to an LMFDB label.
-
-    :param label: str
-    :return: GenusSymbol_global_ring
-
-    >>> all_syms = all_genus_symbols(8,0,2**5*3**4*5**3*7**2,is_even=False)
-    >>> all([genus_symbol_from_label(create_genus_label(s)) == s for s in all_syms])
-    True
-    '''
-    split_label = label.split(".")
-    rk = ZZ(split_label[0])
-    sig = ZZ(split_label[1])
-    n_plus = (rk + sig) // 2
-    n_minus = (rk - sig) // 2
-    det = ZZ(split_label[2])
-    primes = (2*det).prime_divisors()
-    symbols = []
-    for i,p in enumerate(primes):
-        rank_dec = [decode_rank(c) for c in split_label[3+i]]
-        rank_dec = [rk - sum(rank_dec)] + rank_dec
-        symbols_p = [[i, rank_dec[i], 1] for i in range(len(rank_dec)) if rank_dec[i] > 0]
-        symbols.append(symbols_p)
-
-    # initializing the symbol at 2
-    symbols[0] = [s + [0,0] for s in symbols[0]]
-    num_blocks_2 = len(symbols[0])
-    
-    local_data = ZZ(split_label[3 + len(primes)], base=16)
-
-    compart_bits = (local_data % (1 << num_blocks_2)).digits(2, padto=num_blocks_2)
-
-    for i in range(num_blocks_2):
-        symbols[0][i][3] = compart_bits[i]
-
+def build_compartments_and_trains(symbols, num_blocks_2, compart_bits):
     compartments = []
     trains = []
     in_compartment = False
@@ -356,6 +321,46 @@ def genus_symbol_from_label(label):
         compartments.append([j for j in range(compart_start, num_blocks_2)])
 
     trains.append([j for j in range(train_start, num_blocks_2)])
+    return compartments, trains
+
+
+def genus_symbol_from_label(label):
+    '''
+    Returns a genus symbol corresponding to an LMFDB label.
+
+    :param label: str
+    :return: GenusSymbol_global_ring
+
+    >>> all_syms = all_genus_symbols(8,0,2**5*3**4*5**3*7**2,is_even=False)
+    >>> all([genus_symbol_from_label(create_genus_label(s)) == s for s in all_syms])
+    True
+    '''
+    split_label = label.split(".")
+    rk = ZZ(split_label[0])
+    sig = ZZ(split_label[1])
+    n_plus = (rk + sig) // 2
+    n_minus = (rk - sig) // 2
+    det = ZZ(split_label[2])
+    primes = (2*det).prime_divisors()
+    symbols = []
+    for i,p in enumerate(primes):
+        rank_dec = [decode_rank(c) for c in split_label[3+i]]
+        rank_dec = [rk - sum(rank_dec)] + rank_dec
+        symbols_p = [[i, rank_dec[i], 1] for i in range(len(rank_dec)) if rank_dec[i] > 0]
+        symbols.append(symbols_p)
+
+    # initializing the symbol at 2
+    symbols[0] = [s + [0,0] for s in symbols[0]]
+    num_blocks_2 = len(symbols[0])
+    
+    local_data = ZZ(split_label[3 + len(primes)], base=16)
+
+    compart_bits = (local_data % (1 << num_blocks_2)).digits(2, padto=num_blocks_2)
+
+    for i in range(num_blocks_2):
+        symbols[0][i][3] = compart_bits[i]
+
+    compartments, trains = build_compartments_and_trains(symbols, num_blocks_2, compart_bits)
             
     local_data >>= num_blocks_2
     
