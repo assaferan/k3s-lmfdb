@@ -1,0 +1,45 @@
+//Code verifying the transcendental and Picard lattice of split rank 20 K3 surfaces over Q
+
+Rank20_split_discriminants := [-3,-4,-7,-8,-11,-12,-16,-19,-27,-28,-43,-67,-163];
+
+// The Transcendental lattice TX of the rank 20 split K3 is given by
+// [2,a]
+// [a,(d+a)/2]
+// where a = 0 or 1, according to whether d is even or odd, respectively.
+
+ad_pairs := [[IsEven(d) select 0 else 1,d] : d in Rank20_split_discriminants];
+
+G := [
+0, 1, 0, 0,
+1, 0, 0, 0,
+0, 0, 0, 1,
+0, 0, 1, 0];
+
+// Gram matrix of U + U
+U2Gram := RMatrixSpace(IntegerRing(), 4, 4) ! G;
+
+// Let U + U = <e,f> + <g,h>, where e^2 = f^2 = 0 and ef = 1, and 
+// similarly for g, h. 
+// We embed T(X) in U + U as <e + f, a*e + g + {(-d+a)/4]*h>
+// We claim that for discriminant d
+// the vectors -e+f-a*h and -g + {(-d+a)/4]*h span the orthogonal
+// complement of T(X)
+// The next for loop verifies this claim
+
+OrthComps := [];
+
+for pair in ad_pairs do
+	a := pair[1];
+	d := pair[2];
+	B := RMatrixSpace(Integers(),2,4)![1,1,0,0,a,0,1,(-d+a)/4];
+	TX := B*U2Gram*Transpose(B);
+	OrthCompTX := RMatrixSpace(Integers(),2,4)![-1,1,0,-a,0,0,-1,(-d+a)/4];
+	Null := B*U2Gram*Transpose(OrthCompTX);
+	assert Null eq RMatrixSpace(Integers(),2,2)![0,0,0,0];
+	Append(~OrthComps,[* d, TX, OrthCompTX *]);
+end for;
+
+OrthComps;
+
+// The Picard lattice of T(X) is OrthCompTX + U + E8(-1) + E8(-1)
+
