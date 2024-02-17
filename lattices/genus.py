@@ -6,6 +6,8 @@ from sage.arith.misc import prime_divisors
 from sage.misc.misc_c import prod
 from sage.quadratic_forms.genera.genus import Genus_Symbol_p_adic_ring
 from sage.quadratic_forms.genera.genus import GenusSymbol_global_ring
+from sage.interfaces.magma import magma
+from sage.matrix.constructor import matrix
 
 def get_product(set_list):
     '''
@@ -249,7 +251,7 @@ def create_genus_label(genus_sym):
     # for debbugging purposes
     bits = []
     # compartments are in correspondece with subsets of {0..block_n-1}
-    comparts = reduce(lambda x,y:x+y, s2.compartments())
+    comparts = reduce(lambda x,y:x+y, s2.compartments(),[])
     compart_symbol = sum([1 << e for e in comparts])
     # note that the compart_symbol will be even if and only if the lattice is even
     compart_nbits = block_n
@@ -397,3 +399,140 @@ def genus_symbol_from_label(label):
 
     local_symbols = [Genus_Symbol_p_adic_ring(p, symbols[j]) for j,p in enumerate(primes)]
     return GenusSymbol_global_ring((n_plus, n_minus), local_symbols)
+
+# This is based on the __repr__ method from local symbols
+# !! TODO !! - should refactor the code there and then use it
+
+def conway_symbol_diadic(local_symbol):
+    CS = local_symbol.canonical_symbol()
+    trains = local_symbol.trains()
+    comps = local_symbol.compartments()
+
+    # removing the 0-index in case we omit it
+        
+    if CS[0][0] == 0:
+        if trains[0] == [0]:
+            trains = trains[1:]
+        else:
+            trains = [trains[0][1:]] + trains[1:]
+            
+        if len(comps) > 0:
+            if comps[0] == [0]:
+                comps = comps[1:]
+            elif comps[0][0] == 0:
+                comps = [comps[0][1:]] + comps[1:]
+                
+            
+    for train in trains:
+        # mark the beginning of a train with a colon
+        CS_string += " :"
+        # collect the indices where compartments begin and end
+        compartment_begins = []
+        compartment_ends = []
+        for comp in comps:
+            compartment_begins.append(comp[0])
+            compartment_ends.append(comp[-1])
+
+        for block_index in train:
+            if block_index in compartment_begins:
+                # mark the beginning of this compartment with [
+                CS_string += "["
+            block = CS[block_index]
+            block_string = "%s^{%s}" % (p**block[0], block[2] * block[1])
+            CS_string += block_string
+            if block_index in compartment_ends:
+                # close this compartment with ]
+                CS_string += "]"
+                # the oddity belongs to the compartment
+                # and is saved in its first block
+                i = compartment_ends.index(block_index)
+                compartment_start = compartment_begins[i]
+                oddity = CS[compartment_start][4]
+                CS_string += "_%s" % oddity
+        # remove the first colon
+        CS_string = CS_string[2:]
+        # remove some unnecessary whitespace
+        CS_string = CS_string.replace("  :", ":")
+    return CS_string
+
+# Here we do not want the trains and compartments, for the global symbol
+def conway_symbol_local_part(local_symbol):
+    p = local_symbol.prime()
+    CS_string = ""
+    symbols = local_symbol.canonical_symbol()
+    if (p == 2) and (symbols[0][3] == 0):
+        oddities = [i for i,s in enumerate(symbols) if s[4] != 0]
+        if len(oddities) > 0:
+            last_idx = oddities[-1]
+            # we won't display the oddity when it can be inferred from the oddity formula
+            symbols[last_idx][4] = 0
+            
+    symbols = [s for s in symbols if s[0] > 0]
+    for s in symbols:
+        CS_string += "%s^{%s}" % (p**s[0], s[2] * s[1])
+        if (p == 2) and ((s[1] % 2 == 0) or (s[1] == 1)):
+            if s[3] == 0:
+                CS_string += "_{II}"
+            else:
+                if s[4] == 0:
+                    CS_string += "_{I}"
+                else:
+                    CS_string += "_{" + str(s[4]) + "}"
+    return CS_string
+
+def conway_symbol(genus_symbol):
+    roman_numeral = "II" if genus_symbol.is_even() else  "I"
+    r,s = genus_symbol.signature_pair()
+    prefix = roman_numeral + "_{" + str(r) + "," + str(s) + "}"
+    local_part = "".join([conway_symbol_local_part(s) for s in genus_symbol.local_symbols()])
+    return prefix + "(" + local_part + ")"
+
+def flat_mat(mat):
+    rows = [list(x) for x in mat.rows()]
+    return reduce(lambda x,y: x+y, rows)
+
+def create_genus_entry(genus_symbol, hecke_primes=[2]):
+    '''
+    Returns a dictionary with fields corresponding to the schema, 
+    and values populated by the genus symbol.
+    The list of hecke_primes determines for which primes we compute
+    the Hecke matrices and Hecke polynomials
+    '''
+    table_row = {}
+    table_row['label'] = create_genus_label(genus_symbol)
+    table_row['rank'] = genus_symbol.rank()
+    table_row['signature'] = genus_symbol.signature_pair()[0]
+    table_row['det'] = genus_symbol.determinant()
+    table_row['disc'] = table_row['det']
+    if (genus_symbol.is_even() and genus_symbol.rank() % 2 == 1):
+        table_row['disc'] *= 2
+    table_row['conway_symbol'] = conway_symbol(genus_symbol)
+    table_row['level'] = genus_symbol.level()
+    table_row['is_even'] = genus_symbol.is_even()
+    disc_form = genus_symbol.discriminant_form()
+    table_row['discriminant_group_invs'] = disc_form.invariants()
+    disc_q = disc_form.gram_matrix_quadratic()
+    den = disc_q.denominator()
+    table_row['discriminant_form'] = flat_mat(den*disc_q)
+    
+    # These operations are time consuming, and in high rank should be replaced by Noam's code
+    h = len(genus_symbol.representatives())
+    table_row['class_number'] = h
+
+    mass = genus_symbol.mass()
+    table_row['mass'] = [mass.numerator(), mass.denominator()]
+    
+    lat = genus_symbol.representative()
+    hecke_mats = {}
+    hecke_polys = {}
+    for p in hecke_primes:
+        hecke_mag = magma.AdjacencyMatrix(magma.Genus(magma.LatticeWithGram(lat)),p)
+        hecke_mats[p] = list(magma.Eltseq(hecke_mag))
+        hecke_mat = matrix(ZZ, h, h, hecke_mats[p])
+        hecke_poly_fac = list(hecke_mat.charpoly().factor())
+        hecke_polys[p] = [[fa[0].list(), fa[1]] for fa in hecke_poly_fac]
+    table_row['adjacency_matrix'] = hecke_mats
+    table_row['adjacency_polynomials'] = hecke_polys
+    
+    return table_row
+    
