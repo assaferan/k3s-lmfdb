@@ -6,7 +6,7 @@ Note: every period must have a model associated to it, stored in the `k3_polariz
 
 | Column | Type | Description |
 | --- | --- | --- |
-| label | text | Label is LAT.isog.n, where LAT is the lattice label for the Picard lattice, isog is a counterenumerating isogeny classes ordered just by when the isogeny class was first added to the database (encoded using a lower case Cremona letter code) and n is a positive integer counter based on when each curve within an isogeny class was added |
+| label | text | Label is LAT.isog.n, where LAT is the lattice label for the Picard lattice, isog is a counter enumerating isogeny classes ordered just by when the isogeny class was first added to the database (encoded using a lower case Cremona letter code) and n is a positive integer counter based on when each curve within an isogeny class was added |
 | isogeny_class | text | Label for the isogeny class, which is LAT.isog |
 | picard_lattice | text | label for Pic(X) as a lattice (and thus an entry in k3_families) |
 | transcendental_lattice | text | label for the trancendental lattice (rank k) |
