@@ -13,7 +13,7 @@ Label: `dimension.signature.determinant.genus_spec.tiebreaker` where
     - r is the rank of the lattices
     - s is n_plus, the number of 1s in the diagonalization over R.
     - d is the determinant
-    - If p_1, ... , p_k are the primes whose squares divide 2*d (p_i^2 | 2*d), then
+    - If p_1, ... , p_k are the primes whose squares divide `2*d` `(p_i^2 | 2*d)`, then
     j_1,...,j_k are corresponding rank decompositions of their Jordan forms, omitting the first, encoded in base 62 (digits 0-9, then lowercase a-z then uppercase A-Z)
     For example, if the pairs of (valuation, rank) appearing in the decomposition are (3, 1), (4,10), (6,37), it will be encoded as 01a0B (the 0s come from the fact that the rank at valuations 2 and 5 are 0).
     - The last component of the label, x, is a hexadecimal string whose bits represent the local data.
