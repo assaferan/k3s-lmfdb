@@ -9,7 +9,23 @@ Label: `dimension.signature.determinant.genus_spec.tiebreaker` where
   - ommitted if determinant is 1 and signature is not a multiple of 8
   - 0 for the even lattice and 1 for the odd in the case that determinant is 1 and signature is a multiple of 8
   - otherwise, for each p with p^2|determinant, we give the concatenated dimensions of the p,p^2,p^3... blocks in the Jordan decomposition (using lower case letters and then upper case letters if these dimensions are larger than 9; we separate different primes with periods.  Finally, we encode the rest of the genus information (sign, scale, oddity etc) into a single integer as described below, and append it to the Jordan information.  This integer will be even if the genus is even and odd if the genus is odd.
-  - TODO for Eran: describe this encoding
+  - Label is in the format r.s.d.j_1.j_2....j_k.x, where 
+    r is the rank of the lattices
+    s is the signature (n_plus - n_minus)
+    d is the determinant
+    If p_1, ... , p_k are the primes whose squares divide 2*d (p_i^2 | 2*d), then
+    j_1,...,j_k are corresponding rank decompositions of their Jordan forms, omitting the first, encoded in base 62
+    (digits 0-9, then lowercase a-z then uppercase A-Z)
+    For example, if the pairs of (valuation, rank) appearing in the decomposition are (3, 1), (4,10), (6,37), 
+    it will be encoded as 01a0B.
+    The last component of the label, x, is a hexadecimal string whose bits represent the local data.
+    Let n_2 be the number of non-zero blocks in the Jordan decomposition at 2.
+    The least n_2 bits specify the types (I or II) of the non-zero blocks at 2.
+    From these, once can deduce the compartments and trains in the local symbol at 2, let c, t be their numbers.
+    The next 3*c bits represent the oddities of the compartments, with every 3 bits giving an oddity mod 8.
+    The next t bits represent the signs of the trains.
+    Finally, for every other prime p dividing d, in increasing order, if there are n_p non-zero blocks in the 
+    Jordan decomposition at p, we add n_p bits representing the signs of these blocks.
   - For the tiebreaker, we use lexicographic sorting by canonical Gram matrix for definite lattices.  For indefinite lattices, a tiebreaker is only needed in rank 2 or 3 (in rank 3 spinor genera provide a complete invariant).
 
 | Column | Type | Description |
