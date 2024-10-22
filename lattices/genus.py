@@ -64,7 +64,7 @@ def get_dets(det_set, sign, num):
         sgn = sign*prod(det)
         det += [sgn]
         dets.append(det)
-    return dets  
+    return dets
 
 def oddity(s):
     '''
@@ -472,20 +472,20 @@ def conway_symbol_diadic(local_symbol):
     comps = local_symbol.compartments()
 
     # removing the 0-index in case we omit it
-        
+
     if CS[0][0] == 0:
         if trains[0] == [0]:
             trains = trains[1:]
         else:
             trains = [trains[0][1:]] + trains[1:]
-            
+
         if len(comps) > 0:
             if comps[0] == [0]:
                 comps = comps[1:]
             elif comps[0][0] == 0:
                 comps = [comps[0][1:]] + comps[1:]
-                
-            
+
+
     for train in trains:
         # mark the beginning of a train with a colon
         CS_string += " :"
@@ -529,7 +529,7 @@ def conway_symbol_local_part(local_symbol):
             last_idx = oddities[-1]
             # we won't display the oddity when it can be inferred from the oddity formula
             symbols[last_idx][4] = 0
-            
+
     symbols = [s for s in symbols if s[0] > 0]
     for s in symbols:
         CS_string += "%s^{%s}" % (p**s[0], s[2] * s[1])
@@ -555,45 +555,67 @@ def conway_symbol(genus_symbol):
         return prefix + "(" + local_part + ")"
     return prefix
 
-def flat_mat(mat):
-    rows = [list(x) for x in mat.rows()]
-    return reduce(lambda x,y: x+y, rows,[])
-
-def create_genus_entry(genus_symbol, hecke_primes=[2]):
+def create_genus_entry(genus_symbol):
     '''
-    Returns a dictionary with fields corresponding to the schema, 
+    Returns a dictionary with fields corresponding to the schema,
     and values populated by the genus symbol.
-    The list of hecke_primes determines for which primes we compute
-    the Hecke matrices and Hecke polynomials
     '''
     table_row = {}
     table_row['label'] = create_genus_label(genus_symbol)
-    table_row['rank'] = genus_symbol.rank()
+    table_row['rank'] = rank = genus_symbol.rank()
     table_row['signature'] = genus_symbol.signature_pair()[0]
     table_row['det'] = genus_symbol.determinant()
     table_row['disc'] = table_row['det']
     if (genus_symbol.is_even() and genus_symbol.rank() % 2 == 1):
         table_row['disc'] *= 2
     table_row['conway_symbol'] = conway_symbol(genus_symbol)
-    table_row['level'] = genus_symbol.level()
+    table_row['level'] = level = genus_symbol.level()
     table_row['is_even'] = genus_symbol.is_even()
     disc_form = genus_symbol.discriminant_form()
     table_row['discriminant_group_invs'] = disc_form.invariants()
     disc_q = disc_form.gram_matrix_quadratic()
     den = disc_q.denominator()
-    table_row['discriminant_form'] = flat_mat(den*disc_q)
-    
-    # These operations are time consuming, and in high rank should be replaced by Noam's code
-    h = len(genus_symbol.representatives())
-    table_row['class_number'] = h
-
+    table_row['discriminant_form'] = (den*disc_q).list()
     if genus_symbol.signature() == genus_symbol.rank():
         mass = genus_symbol.mass()
         table_row['mass'] = [mass.numerator(), mass.denominator()]
     else:
         table_row['mass'] = None
+    # We store a representative for use by the magma code
+    table_row['rep'] = genus_symbol.representative().list()
+    table_row['theta_prec'] = 150 # Every trace_bound currently in the LMFDB of Gamma0(N) or Gamma(N,chi) for chi a quadratic character has trace bound less than 150.
+
+    # sage: list(db.mf_newspaces.search({"trace_bound":{"$gte":100}}, ["label", "trace_bound"]))
+    # [{'label': '3912.1.cp', 'trace_bound': 201}, {'label': '3600.2.x', 'trace_bound': 101}, {'label': '6336.2.m', 'trace_bound': 143}, {'label': '7056.2.k', 'trace_bound': 121}, {'label': '9248.2.a', 'trace_bound': 145}]
+    # sage: list(db.mf_gamma1.search({"trace_bound":{"$gte":100}}, ["label", "trace_bound"]))
+    # [{'label': '2997.1', 'trace_bound': 103}, {'label': '3423.1', 'trace_bound': 147}, {'label': '3549.1', 'trace_bound': 144}, {'label': '3584.1', 'trace_bound': 109}, {'label': '1792.2', 'trace_bound': 193}, {'label': '2560.2', 'trace_bound': 108}, {'label': '2570.2', 'trace_bound': 130}, {'label': '2816.2', 'trace_bound': 129}, {'label': '3072.2', 'trace_bound': 233}, {'label': '3584.2', 'trace_bound': 193}, {'label': '3840.2', 'trace_bound': 169}, {'label': '1792.3', 'trace_bound': 193}, {'label': '2560.3', 'trace_bound': 108}, {'label': '2816.3', 'trace_bound': 129}, {'label': '3072.3', 'trace_bound': 233}, {'label': '3584.3', 'trace_bound': 193}, {'label': '3840.3', 'trace_bound': 169}, {'label': '1792.4', 'trace_bound': 193}]
+    return table_row
+
+def create_lattice_entry(gram):
+    # Basic invs (rank, signature, det, disc, class_number, discriminant_group_invs, is_even)
+    # Gram (gram, canonical_gram)
+    # Labels (genus_label, label, name, conway_symbol)
+    # Dual (dual_label, dual_theta_series, dual_hermite, dual_kissing, dual_density, dual_det, dual_conway)
+    # Automorphism group (aut_size, aut_label, festi_veniani_index)
+    # Packing info (density, hermite, kissing, minimum) -> Density, HermiteNumber, KissingNumber, Minimum
+    # Representing integers (level, theta_series) ThetaSeries (TODO: figure out precision.  Max(trace_bound, 100, minimum+4) or something; going up to trace bound should mean we distinguish between lattices in the genus that have different theta series.  Compute trace bound in half integral weight using Shimura isomorphism)
+    # Neighbors (pneighbors)
+    pass
+
+def fill_genus_entry(label, hecke_primes=[2]):
+    '''
+    The list of hecke_primes determines for which primes we compute
+    the Hecke matrices and Hecke polynomials
+    '''
+    # These operations are time consuming
+    genus_symbol = genus_symbol_from_label(label)
+    # In high rank, the following call should be replaced by Noam's code
+    reps = genus_symbol.representatives()
     
-    lat = genus_symbol.representative()
+
+    genus_row['class_number'] = h = len(reps)
+
+    lat = reps[0]
     hecke_mats = {}
     hecke_polys = {}
 
@@ -604,19 +626,19 @@ def create_genus_entry(genus_symbol, hecke_primes=[2]):
             hecke_mat = matrix(ZZ, h, h, hecke_mats[p])
             hecke_poly_fac = list(hecke_mat.charpoly().factor())
             hecke_polys[p] = [[fa[0].list(), fa[1]] for fa in hecke_poly_fac]
-        table_row['adjacency_matrix'] = hecke_mats
-        table_row['adjacency_polynomials'] = hecke_polys
+        genus_row['adjacency_matrix'] = hecke_mats
+        genus_row['adjacency_polynomials'] = hecke_polys
     else:
-        table_row['adjacency_matrix'] = None
-        table_row['adjacency_polynomials'] = None
-    
-    return table_row
+        genus_row['adjacency_matrix'] = None
+        genus_row['adjacency_polynomials'] = None
+
+    return genus_row, lattice_rows
 
 # The fields here are copied from the schema
 COL_TYPE_LATIICE_GENUS = {'label' : 'text',
                           'rank'  : 'smallint',
                           'signature' : 'smallint',
-                          'class_number' : 'smallint',
+                          #'class_number' : 'smallint',
                           'det' : 'bigint',
                           'disc' : 'bigint',
                           'conway_symbol' : 'text',
@@ -624,9 +646,9 @@ COL_TYPE_LATIICE_GENUS = {'label' : 'text',
                           'is_even' : 'boolean',
                           'discriminant_group_invs' : 'integer[]',
                           'discriminant_form' : 'integer[]',
-                          'adjacency_matrix' : 'jsonb',
-                          'adjacency_polynomials' : 'jsonb',
-                          'mass' : 'numeric[]'
+                          #'adjacency_matrix' : 'jsonb',
+                          #'adjacency_polynomials' : 'jsonb',
+                          #'mass' : 'numeric[]',
 }
 
 def write_header_to_file(fname, sep = "|", col_type=COL_TYPE_LATIICE_GENUS):
@@ -640,7 +662,6 @@ def write_header_to_file(fname, sep = "|", col_type=COL_TYPE_LATIICE_GENUS):
     f = open(fname, "w")
     f.write(header)
     f.close()
-    return
 
 def value_to_postgres(val):
     if type(val) == list:
@@ -668,12 +689,10 @@ def write_entries_to_file(entries, fname, sep = "|", col_type=COL_TYPE_LATIICE_G
     if (num > 0):
         f.write("\n")
     f.close()
-    return
 
 def write_header_and_entries(entries, fname, sep = "|", col_type=COL_TYPE_LATIICE_GENUS):
     write_header_to_file(fname, sep = sep, col_type=col_type)
     write_entries_to_file(entries, fname, sep = sep, col_type=col_type)
-    return
 
 def write_all_of_sig_up_to_det(n_plus, n_minus, det):
     '''
@@ -681,14 +700,13 @@ def write_all_of_sig_up_to_det(n_plus, n_minus, det):
     '''
     if not os.path.exists("data"):
         os.makedirs("data")
-    fname = "data/genera_signature_%s_%s.tbl" % (n_plus, n_minus)
+    fname = "data/genera_signature_%s_%s_%s.tbl" % (n_plus, n_minus, det)
     write_header_to_file(fname)
-    for d in range(1, det):
+    for d in range(1, det+1):
         print("determinant = %s" % d)
         syms = all_genus_symbols(n_plus, n_minus, d, is_even=False)
         entries = [create_genus_entry(s) for s in syms]
         write_entries_to_file(entries, fname)
-    return
 
 def write_all_up_to_det(rank, det):
     '''
@@ -696,6 +714,5 @@ def write_all_up_to_det(rank, det):
     '''
     for n_minus in range(rank // 2 + 1):
         n_plus = rank - n_minus
-        print("signature = (%s,%s)" %(n_plus, n_minus)) 
+        print("signature = (%s,%s)" %(n_plus, n_minus))
         write_all_of_sig_up_to_det(n_plus, n_minus, det)
-    return

@@ -3,3 +3,5 @@
 * Write and run tests
 * Update front end code to use new data
 * Compare with existing (both LMFDB and Nebe-Sloane)
+* Compute schema in lat_lattices (in addition to lat_genera)
+* Update code to be more resilient to timeouts, and able to parallelize better
