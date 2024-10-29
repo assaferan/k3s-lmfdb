@@ -717,8 +717,6 @@ def write_all_up_to_det(rank, det):
         print("signature = (%s,%s)" %(n_plus, n_minus))
         write_all_of_sig_up_to_det(n_plus, n_minus, det)
 
-    return
-
 def determinant_condition(sp, det):
     p = sp.prime()
     sgn = prod([x[2] for x in sp.symbol_tuple_list()])
