@@ -740,23 +740,23 @@ def jordan_condition(genus_symbol):
         o = t[4]
         if n == 0:
            if (s == 1) or (d in [3,5]):
-               return false
+               return False
         if n == 1:
             if (d in [1,7]) and (o not in [1,7]):
-                return false
+                return False
             if (d in [3,5]) and (o not in [3,5]):
-                return false
+                return False
         if (n == 2) and (s == 1):
             if (d in [1,7]) and (o not in [0,4,6]):
-                return false
+                return False
             if (d in [3,5]) and (o not in [2,4,6]):
-                return false    
+                return False    
         if (n > 2):
             if ((o - n) % 2 != 0):
-                return false
+                return False
             if (s == 0) and (o != 0):
-                return false
-    return true
+                return False
+    return True
 
 def check_genus_symbol(genus_symbol):
     jordan = jordan_condition(genus_symbol)
