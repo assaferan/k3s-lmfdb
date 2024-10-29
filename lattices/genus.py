@@ -3,7 +3,7 @@ from functools import reduce
 
 from sage.rings.integer_ring import ZZ
 from sage.combinat.integer_vector_weighted import WeightedIntegerVectors
-from sage.arith.misc import prime_divisors
+from sage.arith.misc import kronecker, prime_divisors
 from sage.misc.misc_c import prod
 from sage.quadratic_forms.genera.genus import Genus_Symbol_p_adic_ring
 from sage.quadratic_forms.genera.genus import GenusSymbol_global_ring
