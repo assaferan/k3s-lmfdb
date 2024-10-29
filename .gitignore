@@ -2,3 +2,4 @@
 *.sig
 __pycache__
 data
+*.pyc

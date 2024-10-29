@@ -10,7 +10,7 @@ Label: `dimension.signature.determinant.genus_spec.tiebreaker` where
   - 0 for the even lattice and 1 for the odd in the case that determinant is 1 and signature is a multiple of 8
   - otherwise, for each p with p^2|determinant, we give the concatenated dimensions of the p,p^2,p^3... blocks in the Jordan decomposition (using lower case letters and then upper case letters if these dimensions are larger than 9; we separate different primes with periods.  Finally, we encode the rest of the genus information (sign, scale, oddity etc) into a single integer as described below, and append it to the Jordan information.  This integer will be even if the genus is even and odd if the genus is odd.
   - Label is in the format r.s.d.j_1.j_2....j_k.x, where
-    - r is the rank of the lattices
+    - r is the rank of the lattice
     - s is n_plus, the number of 1s in the diagonalization over R.
     - d is the absolute value of the determinant
     - If p_1, ... , p_k are the primes whose squares divide `2*d` `(p_i^2 | 2*d)`, then
