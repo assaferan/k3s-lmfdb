@@ -17,9 +17,10 @@ from sage.modules.free_quadratic_module_integer_symmetric import IntegralLattice
 from sage.rings.finite_rings.finite_field_constructor import GF
 
 def algo3_8(L, a=2):
-    # L is IntegralLattice
-    P = ZZ(L.determinant()).prime_factors()
-    print(P)
+    '''
+    INPUT: L : IntegralLattice, a: Integer
+    Returns the overlattice of L that is saturated at a
+    '''
     # step 2 - skip? should be able to assume B(L, L) in a
 
     # step 3
