@@ -490,7 +490,7 @@ def conway_symbol_dyadic(local_symbol):
             elif comps[0][0] == 0:
                 comps = [comps[0][1:]] + comps[1:]
 
-
+    CS_string = ""
     for train in trains:
         # mark the beginning of a train with a colon
         CS_string += " :"
@@ -527,10 +527,10 @@ def conway_symbol_dyadic(local_symbol):
 def conway_symbol_local_part(local_symbol):
     p = local_symbol.prime()
     CS_string = ""
-    symbols = local_symbol.canonical_symbol()
+    symbols = local_symbol.canonical_symbol()[:]
     if (p == 2) and (symbols[0][3] == 0):
         oddities = [i for i,s in enumerate(symbols) if s[4] != 0]
-        if len(oddities) > 0:
+        if (len(oddities) > 1) or ((len(oddities) == 1) and len([s for s in symbols if s[3] == 1]) == 1):
             last_idx = oddities[-1]
             # we won't display the oddity when it can be inferred from the oddity formula
             symbols[last_idx][4] = 0
