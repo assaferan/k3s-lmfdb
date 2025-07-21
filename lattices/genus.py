@@ -728,6 +728,21 @@ def write_all_of_sig_up_to_det(n_plus, n_minus, det):
         entries = [create_genus_entry(s) for s in syms]
         write_entries_to_file(entries, fname)
 
+def write_all_of_sig_between(n_plus, n_minus, det_lb, det_ub):
+    '''
+    Create data file with all genera of a certain signature with determinant up to det.
+    '''
+    if not os.path.exists("data"):
+        os.makedirs("data")
+    fname = "data/genera_signature_%s_%s_%s_%s.tbl" % (n_plus, n_minus, det_lb, det_ub)
+    write_header_to_file(fname)
+    sgn = 1 if is_even(n_minus) else -1;
+    for d in range(det_lb, det_ub+1):
+        # print("determinant = %s" % (sgn*d))
+        syms = all_genus_symbols(n_plus, n_minus, sgn*d, only_even=False)
+        entries = [create_genus_entry(s) for s in syms]
+        write_entries_to_file(entries, fname)
+
 def write_all_up_to_det(rank, det):
     '''
     Create data files with all genera of a certain rank with determinant up to det.
