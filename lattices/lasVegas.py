@@ -1,18 +1,21 @@
 import os
 from functools import reduce
 
-from sage.arith.misc import kronecker, prime_divisors
+from sage.arith.misc import kronecker, prime_divisors, inverse_mod, factor
 from sage.arith.functions import LCM_list
 from sage.combinat.integer_vector_weighted import WeightedIntegerVectors
+from sage.functions.other import ceil
 from sage.interfaces.magma import magma
 from sage.matrix.constructor import matrix
+from sage.matrix.special import block_diagonal_matrix, diagonal_matrix, block_matrix
 from sage.structure.element import Matrix
-from sage.misc.functional import is_even, is_odd
+from sage.misc.functional import is_even, is_odd, sqrt
 from sage.misc.misc_c import prod
 from sage.quadratic_forms.genera.genus import Genus_Symbol_p_adic_ring
 from sage.quadratic_forms.genera.genus import GenusSymbol_global_ring
 from sage.quadratic_forms.genera.genus import is_GlobalGenus, is_2_adic_genus
 from sage.quadratic_forms.genera.genus import LocalGenusSymbol
+from sage.rings.finite_rings.integer_mod_ring import Zmod
 from sage.rings.integer_ring import ZZ
 from sage.rings.integer import Integer
 from sage.modules.free_quadratic_module import FreeQuadraticModule_submodule_with_basis_pid, FreeQuadraticModule
