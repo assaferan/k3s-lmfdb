@@ -36,15 +36,6 @@ from math import prod
 from itertools import product
 
 def compare(testCases):
-    print("Sage algorithm start.")
-    start = time.time()
-    for i, test in enumerate(testCases):
-        test.representative()
-        if i%5 == 4:
-            print(f"{i+1} of {len(testCases)} done.")
-    end = time.time()
-    print(f"Sage algorithm complete in {round(end-start, 2)} seconds.")
-
     print("Dubey Holenstein algorithm start.")
     cache = {}
     start = time.time()
@@ -54,7 +45,16 @@ def compare(testCases):
             print(f"{i+1} of {len(testCases)} done.")
     end = time.time()
     print(f"Dubey Holenstein algorithm complete in {round(end-start, 2)} seconds.")
-    print(len(cache))
+    print(f"Cache size: {len(cache)}")
+    
+    print("Sage algorithm start.")
+    start = time.time()
+    for i, test in enumerate(testCases):
+        test.representative()
+        if i%5 == 4:
+            print(f"{i+1} of {len(testCases)} done.")
+    end = time.time()
+    print(f"Sage algorithm complete in {round(end-start, 2)} seconds.")
 
 def cut(testCases, targetSize):
     """pick a determined subset of testCases
@@ -67,11 +67,11 @@ def cut(testCases, targetSize):
         return [testCases[i*gap] for i in range(targetSize)]
 
 if __name__ == "__main__":
-    signaturePair = (ZZ(5),ZZ(6))
-    det = 2**4 * 17**3 * 23**3
+    signaturePair = (ZZ(6),ZZ(6))
+    det = 2**7 * 17**2 * 23**3
     testCases = genus.all_genus_symbols(signaturePair[0], signaturePair[1], det)
     print(f"Loaded {len(testCases)} symbols with determinant {factor(det)} and signature {signaturePair}.")
-    actualTests = testCases
+    actualTests = cut(testCases, 100)
     compare(actualTests)
     
     # test = lasVegas.genusFromSymbolLists((12,6), [(2,[[0, 10, 3, 0, 0], [1, 8, 3, 1, 2]]),

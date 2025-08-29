@@ -664,7 +664,7 @@ def primitivelyRepresentedTWithRepresentations(globalGenus):
         assert block_matrix(R,[[x,A]]).determinant() == R(1)
         representations.append((p, S, x, A))
 
-    return (t, bar(t**(n-1)*det), representations)
+    return (t, bar(t*det), representations)
 
 def dubeyHolensteinLatticeRepresentative(globalGenus, check=False, superDumbCheck=False, depth=1, cache=None):
     """globalGenus: sage GenusSymbol_global_ring object
@@ -696,7 +696,6 @@ def dubeyHolensteinLatticeRepresentative(globalGenus, check=False, superDumbChec
         assert is_GlobalGenus(reducedGenus)
 
     det = reducedGenus.determinant()
-    relevantPrimes = (2*det).prime_divisors()
     t,q,representations = primitivelyRepresentedTWithRepresentations(reducedGenus)
     localSyms = []
 
@@ -726,7 +725,10 @@ def dubeyHolensteinLatticeRepresentative(globalGenus, check=False, superDumbChec
     if check:
         assert is_GlobalGenus(newGenus) #check if new genus has rep
     Htild = dubeyHolensteinLatticeRepresentative(newGenus, check, superDumbCheck, depth+1, cache)
-    Utild = computeChangeOfVariables(Htild, H, q)
+
+    newQ = bar(det*t)
+    # print(f"depth: {depth}\nq:    {q}\nnewQ: {newQ}\n_____________")
+    Utild = computeChangeOfVariables(Htild, H, newQ)
 
     bottomRight = (Htild+Utild.transpose()*d.transpose()*d*Utild)/t
     returnMatrixBlock = block_matrix([[t, d*Utild],
