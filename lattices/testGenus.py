@@ -41,7 +41,7 @@ def dhTest(testCases):
     cache = {}
     start = time.time()
     for i, test in enumerate(testCases):
-        print(lasVegas.dubeyHolensteinLatticeRepresentative(test, check=False,superDumbCheck=False,cache=cache))
+        lasVegas.dubeyHolensteinLatticeRepresentative(test, check=False,superDumbCheck=False,cache=cache)
         if i%5 == 4:
             print(f"{i+1} of {len(testCases)} done.")
     end = time.time()
@@ -52,7 +52,7 @@ def sageTest(testCases):
     print("Sage algorithm start.")
     start = time.time()
     for i, test in enumerate(testCases):
-        print(test.representative())
+        test.representative()
         if i%5 == 4:
             print(f"{i+1} of {len(testCases)} done.")
     end = time.time()
@@ -96,26 +96,27 @@ def dhTimeProfile(method, globalGenus):
     lp_wrapper(globalGenus)
     lp.print_stats()
 
-
-
 def printbar():
     print("___________________\n")
 
 
 
 if __name__ == "__main__":
-    signaturePair = (ZZ(30),ZZ(6))
-    det = 2**3*100000007**3
-    # testCases = genus.all_genus_symbols(signaturePair[0], signaturePair[1], det)
-    # print(f"Loaded {len(testCases)} symbols with determinant {factor(det)} and signature {signaturePair}.")
-    actualTests = [getRandomSymbol(det, 10)]
-    print(lasVegas.symbolList(actualTests[0]))
+    signaturePair = (ZZ(12),ZZ(0))
+    det = 100
+    actualTests = cut(genus.all_genus_symbols(signaturePair[0], signaturePair[1], det),20)
+    # actualTests = [lasVegas.genusFromSymbolLists((11,0),[
+    #     (2,     [[2, 4, 1, 1, 4], [3, 4, 5, 0, 0], [4, 3, 3, 1, 1]]),
+    #     (100000007,     [[0, 10, 1], [3, 1, 1]])
+    # ])]
+
+    print(f"Running {len(actualTests)} tests.")
     printbar()
 
     #run tests
-    sageTest(actualTests)
-    printbar()
     dhTest(actualTests)
+    printbar()
+    sageTest(actualTests)
 
     # dhTimeProfile(lasVegas.computeChangeOfVariables, actualTests[0])
     

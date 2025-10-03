@@ -149,8 +149,6 @@ def oddPrimeDiagonalRepresentative(globalGenus, p, k = None):
 
 def dyadicBlockRepresentative(globalGenus):
     dyadicTupleList = globalGenus.local_symbol(2).symbol_tuple_list()
-    # dyadicTupleList.sort(key=lambda row: row[0])
-    # print(dyadicTupleList)
     blocks = []
     Tplus = matrix(ZZ, 2, 2, [2, 1, 1, 4]) #TODO: optimize by leaving these pre-defined
     Tminus = matrix(ZZ, 2, 2, [2, 1, 1, 2])
@@ -284,12 +282,8 @@ def theorem10Lift(Q, t, x, p, i, k):
         return x
     a = (x.transpose()*Q*x)[0,0]
     R = Zmod(p**k)
-    # print(a,t)
-    # print(type(a),type(t))
-    # print(a/t)
     u = sqrt(R(t/a))
     result = u*x
-    # print(f"Lifted {x} to {result}")
     # assert R(t) == (result.transpose()*matrix(R, Q)*result)[0,0], f"{R(t)} =/= {(result.transpose()*matrix(R, Q)*result)[0,0]} (mod {p}^{k})"
     return u*x
 
@@ -318,8 +312,6 @@ def primitiveRepresentationOddPrimes(tau1, tau2unreduced, tUnreduced, p, Kp):
     ZpZ = Zmod(p)
 
     if kronecker(t,p) == kronecker(tau2,p):
-        # print(tau2)
-        # print(p)
         return (0,sqrt(ZpKpZ(t)/ZpKpZ(tau2)))
     
     y1, noty2 = twoSquaresSumToNonsquare(p, ZpZ(t)/ZpZ(tau1))
@@ -673,24 +665,27 @@ def dubeyHolensteinLatticeRepresentative(globalGenus, check=False, superDumbChec
         if genusKey(globalGenus) in cache:
             return cache[genusKey(globalGenus)]
 
-    n = globalGenus.dimension()
+    n0 = globalGenus.dimension()
     det = globalGenus.determinant()
     assert det != 0
-    signaturePair = globalGenus.signature_pair()
-
-    if n<=3:
-        returnMatrix = globalGenus.representative() #TODO lol oops
-        assert Genus(returnMatrix) == globalGenus
-        return returnMatrix
 
     reducedGenus, gcdOfGenus = reduceGenus(globalGenus)
     if check:
         assert is_GlobalGenus(reducedGenus)
-    # print(factor(genusOrder(reducedGenus)))
-    # print(reducedGenus.determinant())
+    
+    moreReducedGenus = removeTrivialTerms(reducedGenus)
+    n = moreReducedGenus.dimension()
+    addBack = block_diagonal_matrix([matrix([[1]])]*(n0-n))
+    signaturePair = moreReducedGenus.signature_pair()
 
-    det = reducedGenus.determinant()
-    t,q,representations = primitivelyRepresentedTWithRepresentations(reducedGenus)
+    if n<=3:
+        preliminary = moreReducedGenus.representative() #TODO lol oops
+        returnMatrix = gcdOfGenus*(block_diagonal_matrix([addBack,preliminary]))
+        assert Genus(returnMatrix) == globalGenus
+        return returnMatrix
+    
+    det = moreReducedGenus.determinant()
+    t,q,representations = primitivelyRepresentedTWithRepresentations(moreReducedGenus)
     localSyms = []
 
     dCongruenceList = []
@@ -727,7 +722,8 @@ def dubeyHolensteinLatticeRepresentative(globalGenus, check=False, superDumbChec
     bottomRight = (Htild+Utild.transpose()*d.transpose()*d*Utild)/t
     returnMatrixBlock = block_matrix([[t, d*Utild],
                                       [(d*Utild).transpose(), bottomRight]])
-    returnMatrix = makeSmall(matrix(gcdOfGenus*returnMatrixBlock), signaturePair)[0]
+    returnMatrix = makeSmall(matrix(gcdOfGenus*block_diagonal_matrix(addBack,returnMatrixBlock)),
+                             signaturePair)[0]
 
     assert Genus(returnMatrix) == globalGenus, f"Bad output. Generated representative's genus:\n{Genus(returnMatrix)}\n...versus input genus:\n{globalGenus}"
     
@@ -743,17 +739,46 @@ def removeTrivialTerms(globalGenus):
     availableTerms = []
     for i in localSyms:
         firstTuple = i.symbol_tuple_list()[0]
-        if i[0] != 0: #no p^0 constituent altogether
-            continue
-        if i.prime() != 2:
-            availableTerms.append(i[1]-2) #not bothered enough to try optimizing further than this
-        else:
-            availableTerms.append(i[1])
+        if firstTuple[0] != 0: #no p^0 constituent altogether, we can't do anything
+            return globalGenus
+        if i.prime() != 2: #odd symbol
+            if firstTuple[2] == 1: #if determinant = 1
+                availableTerms.append(firstTuple[1])
+            else:
+                availableTerms.append(firstTuple[1]-1)
+        else: #dyadic symbol
+            rank, det, s, oddity = firstTuple[1:]
+            if s == 0: #if type II, we can't do anything
+                return globalGenus
+            maxTermsOff = rank-3 #maxTermsOff is maximum number of diagonal 1's
+            #rules from conway sloane p383
+            if det in [1,7]:
+                if (oddity-rank)%8 in [0,6]:
+                    maxTermsOff = rank-1
+                elif (oddity-rank)%8 == 4:
+                    maxTermsOff = rank-2
+            else: #det in [3,5]
+                if (oddity-rank)%8 in [2,4]:
+                    maxTermsOff = rank-1
+                elif (oddity-rank)%8 == 0:
+                    maxTermsOff = rank-2
+
+            if maxTermsOff == -1: #this is trigerred if rank is 2 and we can't have diagonal 1's:
+                return globalGenus
+            
+            availableTerms.append(maxTermsOff)
+    availableTerms.append(n_plus) #can't have more 1's on the diagonal than positive terms in signature
+
     numTermsCut = min(availableTerms)
-    if n_plus == 0 and numTermsCut%2==1: #we only have negative terms
-        numTermsCut -= 1
-    diagonalEntries = []
-    return
+    signaturePair = (n_plus-numTermsCut,n_minus) #new signature
+    tupleList = [[i.prime(),i.symbol_tuple_list()] for i in localSyms]
+    for localSymbol in tupleList:
+        localSymbol[1][0][1] -= numTermsCut
+        if localSymbol[0] == 2: #if p=2
+            localSymbol[1][0][4] = (localSymbol[1][0][4]-numTermsCut)%8 #update oddity too
+        if localSymbol[1][0][1] == 0: #if rank 0 term
+            localSymbol[1].pop(0) #just get rid of it
+    return genusFromSymbolLists(signaturePair, tupleList)
 
 if __name__ == "__main__":
     #TEST IF FUNCTION WORKS
@@ -783,9 +808,17 @@ if __name__ == "__main__":
                     [0,14,2,-6],
                     [0,2,80,12],
                     [0,-6,12,144]])
+    
+    single = matrix(ZZ,[[1]])
 
-    inputGenus = Genus(A)
-    assert is_GlobalGenus(inputGenus)
-    print(f"input genus: \n {inputGenus} \n _______________")
-    print(f"Input genus determinant: {inputGenus.determinant()}")
-    print(genusKey(inputGenus))
+    E = block_diagonal_matrix([single,single,single,single,D,D])
+
+    inputGenus = Genus(E)
+    reducedGenus = removeTrivialTerms(inputGenus)
+    print(f"before:\n{inputGenus}")
+    print(f"{symbolList(inputGenus)}\n___________")    
+    print(f"after:\n{reducedGenus}")
+    print(symbolList(reducedGenus))
+    addBackTerms = inputGenus.dimension() - reducedGenus.dimension()
+    addBack = block_diagonal_matrix([single]*addBackTerms+[reducedGenus.representative()])
+    assert Genus(addBack) == inputGenus, f"After modifications:\n{symbolList(Genus(addBack))}"
