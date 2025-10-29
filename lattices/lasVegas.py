@@ -26,6 +26,8 @@ from math import prod
 from itertools import product
 from sage.env import SAGE_EXTCODE
 
+import copy
+
 def symbolList(globalGenus):
     return ("\n".join([f"({i.prime()},\t{i.symbol_tuple_list()})," for i in globalGenus.local_symbols()]))[:-1]
 def genusFromSymbolLists(signaturePair, tupleLists):
@@ -673,9 +675,8 @@ def dubeyHolensteinLatticeRepresentative(globalGenus, check=False, superDumbChec
     if check:
         assert is_GlobalGenus(reducedGenus)
     
-    moreReducedGenus = removeTrivialTerms(reducedGenus)
+    moreReducedGenus, addBack = removeOrthogonalDirections(reducedGenus)
     n = moreReducedGenus.dimension()
-    addBack = block_diagonal_matrix([matrix([[1]])]*(n0-n))
     signaturePair = moreReducedGenus.signature_pair()
 
     if n<=3:
@@ -727,6 +728,8 @@ def dubeyHolensteinLatticeRepresentative(globalGenus, check=False, superDumbChec
 
     assert Genus(returnMatrix) == globalGenus, f"Bad output. Generated representative's genus:\n{Genus(returnMatrix)}\n...versus input genus:\n{globalGenus}"
     
+    # print(f"t:{t}\nK:{d*Utild}\ngenus[{n-1}]:\n{newGenus}\n____________\ngenus[{n}]:\n{moreReducedGenus}\n______________\n\n\n")
+
     if not (cache is None):
         cache[genusKey(globalGenus)] = returnMatrix #update to cache
     return returnMatrix
@@ -780,6 +783,139 @@ def removeTrivialTerms(globalGenus):
             localSymbol[1].pop(0) #just get rid of it
     return genusFromSymbolLists(signaturePair, tupleList)
 
+def subtractConstituent(symbolList1, symbolList2):
+    """returns x such that the direct sum of x and symbolList2 is symbolList1.
+    in the dyadic case, if there is a choice between type I and type II, we choose type I
+    
+    example: [10,5,-1]-[10,2,-1] = [10,3,1]
+    example: [10,14,5,1,2]-[10,5,3,1,3] = [10,9,7,1,7]
+    
+    the prime doesn't actually matter for this
+    does not check for validity of symbol after subtraction"""
+    assert symbolList1[0] == symbolList2[0] #should same valuation
+    returnList = copy.deepcopy(symbolList1) #TODO: this line is redundant i think
+    if len(symbolList1) == 5: #dyadic
+        # print(symbolList1)
+        # print(symbolList2)
+        returnList[1] -= symbolList2[1] #rank
+        returnList[2] = (returnList[2] * symbolList2[2]) %8 #determinant
+        returnList[4] = (returnList[4]-symbolList2[4])%8 #trace
+        if symbolList2[3] != 0 and returnList[4] == 0: #might need to swap if subtracting an odd constituent and trace=0
+            if returnList[1] == 2 and returnList[2] in [3,5]: #dim 2 and eps=-1
+                returnList[3] = 0 #make type ii
+        assert returnList[1] >= 0
+        # print(returnList)
+    else:
+        returnList[1] -= symbolList2[1]
+        returnList[2] *= symbolList2[2]
+    
+    return returnList
+
+def subtractLocalGenus(genus1,genus2):
+    """genus1 and genus 2 are local symbols"""
+    parts1 = {constituent[0]:constituent for constituent in genus1.symbol_tuple_list()}
+    parts2 = {constituent[0]:constituent for constituent in genus2.symbol_tuple_list()}
+    returnList = []
+    for order in parts1:
+        if order in parts2:
+            subtract = subtractConstituent(parts1[order],parts2[order])
+            if subtract[1] != 0: #don't add rank 0 constituents
+                returnList.append(subtract)
+        else:
+            returnList.append(parts1[order])
+
+    returnList.sort(key=lambda item: item[0]) #idk if dictionaries scramble this stuff up
+    return Genus_Symbol_p_adic_ring(genus1.prime(), returnList)
+
+def subtractGlobalGenus(genus1, genus2):
+    """returns genus1-genus2"""
+    # print(genus1)
+    # print("__________")
+    # print(genus2)
+    # print("__________")
+    sig1 = genus1.signature_pair()
+    sig2 = genus2.signature_pair()
+    newSig = (sig1[0]-sig2[0], sig1[1]-sig2[1])
+    returnLocalSymbols=[]
+    for loc in genus1.local_symbols():
+        newLoc = subtractLocalGenus(loc,genus2.local_symbol(loc.prime()))
+        if newLoc.prime() == 2 or newLoc.determinant() != 1: #don't add degen forms
+            returnLocalSymbols.append(newLoc)
+    return GenusSymbol_global_ring(newSig, returnLocalSymbols)
+
+def removeOrthogonalDirections(globalGenus):
+    #we are going to remove either [[2,1],[1,2]] or [[1]] from the gram matrix (todo be more flexible)
+    localSyms = globalGenus.local_symbols()
+    n_plus = globalGenus.signature_pair()[0]
+    n_minus = globalGenus.signature_pair()[1]
+    firstTuples = []
+    secondTuples = []
+    for i in localSyms:
+        tupleList = i.symbol_tuple_list()
+        firstTuples.append(tupleList[0])
+        if len(tupleList) > 1: #TODO: secondTuple doesn't have to be the very next tuple
+            secondTuples.append(tupleList[1])
+        elif i.prime() == 2:
+            secondTuples.append([0,0,1,2,0])
+        else:
+            secondTuples.append([0,0,1])
+
+    primes = [i.prime() for i in localSyms]
+    default = (globalGenus, matrix([])) #what to return if there's no possible reductions
+    if n_plus < 2: #what are the odds (but also TODO probably this doesn't have to be like this)
+        return default
+    for tuple in firstTuples:
+        if tuple[0] != 0: #no p^0 constituent altogether
+            return default
+        if tuple[1] == 1 and tuple[2] != 1:
+            return default #TODO: this can be optimized, if there is only one prime for which this occurs then we're chilling
+    rank2, det2, type2, oddity2 = firstTuples[0][1:] #dyadic symbols
+    if type2 == 1: #there is an odd term on the diagonal
+        #casework is modelled off of conditions 32 thru 34 of cs
+        if rank2 == 3 and det2 in [1,7] and oddity2 == 5:
+            return default
+        if rank2 == 3 and det2 in [3,5] and oddity2 == 1:
+            return default
+        if rank2 == 2 and det2 in [1,7] and oddity2 in [4,6]:
+            return default
+        if rank2 == 2 and det2 in [3,5] and oddity2 in [0,2]:
+            return default
+        if rank2 == 1 and det2 != 1:
+            return default
+        takeOff = matrix([[1]])
+    else: #type 2 case
+        return default
+        # exterminateTypeII =  matrix([[0,0],[0,0]]) #we will determine this matrix
+        # for i, tuple in enumerate(firstTuples): #search through odd primes to find a candidate type II
+        #     if i == 0:
+        #         continue
+        #     p = primes[i]
+        #     if tuple[1] == 1 and tuple[2] != kronecker(2,p):
+        #         continue
+        #     if secondTuples[i][1] == 1 and secondTuples[i][2] != kronecker(2,p): #if we can't take away one from here
+        #         continue
+        #     else: #we've found a match
+        #         order = secondTuples[i][0]
+        #         exeterminateTypeII = matrix([[2,1],[1,(p**order+1)/2]])
+        # if exeterminateTypeII == matrix([[0,0],[0,0]]): #no valid type ii found
+        #     return default
+        # for i, tuple in enumerate(firstTuples):
+        #     if i == 0:
+        #         continue
+        #     p = primes[i]
+        #     if tuple[1] == 1: #can't squeeze in type ii if the constituent only has 1 term
+        #         return default
+        #     if tuple[1] == 2 and tuple[2] != kronecker(exterminateTypeII.determinant(), p):
+        #         return default
+        # if rank2 == 2 and det2 != exterminateTypeII.determinant()%8:
+        #     return default
+    remainingGenus = subtractGlobalGenus(globalGenus, Genus(takeOff))
+    finalReduction, finalTakeOff = removeOrthogonalDirections(remainingGenus)
+    print("yay")
+    return (finalReduction, block_diagonal_matrix(takeOff, finalTakeOff))
+        
+
+        
 if __name__ == "__main__":
     #TEST IF FUNCTION WORKS
     A = matrix(ZZ, [[69,0,0,0,0,0,0,0,4],
@@ -809,16 +945,26 @@ if __name__ == "__main__":
                     [0,2,80,12],
                     [0,-6,12,144]])
     
+    E = matrix(ZZ, [[1,1],
+                    [1,8]])
+    
+    F = matrix(ZZ, [[1,0,0],
+                    [0,3,0],
+                    [0,0,5]])
+    
     single = matrix(ZZ,[[1]])
 
-    E = block_diagonal_matrix([single,single,single,single,D,D])
-
-    inputGenus = Genus(E)
-    reducedGenus = removeTrivialTerms(inputGenus)
-    print(f"before:\n{inputGenus}")
-    print(f"{symbolList(inputGenus)}\n___________")    
-    print(f"after:\n{reducedGenus}")
-    print(symbolList(reducedGenus))
-    addBackTerms = inputGenus.dimension() - reducedGenus.dimension()
-    addBack = block_diagonal_matrix([single]*addBackTerms+[reducedGenus.representative()])
-    assert Genus(addBack) == inputGenus, f"After modifications:\n{symbolList(Genus(addBack))}"
+    genus1 = Genus(E)
+    genus2 = Genus(F)
+    genus3 = Genus(block_diagonal_matrix([E,F]))
+    print(genus3)
+    print("_____")
+    print(genus2)
+    print("_____")
+    subtraction = subtractGlobalGenus(genus3,genus2)
+    subtractionGenus = Genus(block_diagonal_matrix([subtraction.representative(), genus2.representative()]))
+    print(genus3)
+    print("_____")
+    print(subtractionGenus)
+    assert subtractionGenus == genus3
+    print("success!")

@@ -41,6 +41,7 @@ def dhTest(testCases):
     cache = {}
     start = time.time()
     for i, test in enumerate(testCases):
+        print(lasVegas.symbolList(test))
         lasVegas.dubeyHolensteinLatticeRepresentative(test, check=False,superDumbCheck=False,cache=cache)
         if i%5 == 4:
             print(f"{i+1} of {len(testCases)} done.")
@@ -102,9 +103,9 @@ def printbar():
 
 
 if __name__ == "__main__":
-    signaturePair = (ZZ(12),ZZ(0))
-    det = 100
-    actualTests = cut(genus.all_genus_symbols(signaturePair[0], signaturePair[1], det),20)
+    signaturePair = (ZZ(45),ZZ(0))
+    det = 24
+    actualTests = cut(genus.all_genus_symbols(signaturePair[0], signaturePair[1], det),1)
     # actualTests = [lasVegas.genusFromSymbolLists((11,0),[
     #     (2,     [[2, 4, 1, 1, 4], [3, 4, 5, 0, 0], [4, 3, 3, 1, 1]]),
     #     (100000007,     [[0, 10, 1], [3, 1, 1]])
