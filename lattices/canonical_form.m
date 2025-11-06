@@ -1,4 +1,6 @@
-freeze;
+// freeze;
+
+declare verbose CanonicalForm, 4;
 
 function IsWellRounded(A)
     L := LatticeWithGram(A);
@@ -37,43 +39,46 @@ function satspan(v, A)
 end function;
 
 function V_ms(A : max_num := Infinity())
+    vprintf CanonicalForm, 4:
+            "\n\t\t\t\t Creating characteristic set from short vectors...";
     A := ChangeRing(A, Rationals());
-    L := LatticeWithGram(A);
-    max_norm := Maximum(Diagonal(A));
-    all_vs := ShortVectors(L, max_norm);
-    norms := {v[2] : v in all_vs};
-    norms := Sort([n : n in norms]); 
+    L := LatticeWithGram(A : CheckPositive := false);
+    max_norm := AbsoluteValue(Maximum(Diagonal(A)));
+    // This takes too long, and we might not need all of them
+    // all_vs := ShortVectors(L, max_norm);
+    // norms := {v[2] : v in all_vs};
+    // norms := Sort([n : n in norms]); 
     VA := [];
+    norms := IsEven(L) select [2..max_norm by 2] else [1..max_norm];
     for n in norms do
-	VA cat:= &cat[[v[1],-v[1]] : v in all_vs | v[2] eq n];
+	vprintf CanonicalForm, 5: "\n\t\t\t\t\t adding vectors of length %o...", n;
+        VA cat:= &cat[[v[1],-v[1]] :
+		      v in ShortVectors(L,n,n : Max := (max_num - #VA) div 2)];
 	if (#VA ge max_num) then
 	    return VA;
 	end if;
 	Lsub := sub<L | VA>;
+        vprintf CanonicalForm, 5: "done! rank is %o.", Rank(Lsub);
+        if Rank(Lsub) eq Rank(L) then
+	  vprintf CanonicalForm, 5: "quotient is %o.", L / Lsub;
+	end if;
 	if (Lsub eq L) then
 	    return VA;
 	end if;
     end for;
     Lsub := sub<L | VA>;
     assert Lsub eq L;
+    vprintf CanonicalForm, 4 : "done!\n";
     return VA;
 end function;
 
 function V_cvp(A : max_num := Infinity())
     A := ChangeRing(A, Rationals());
     L := LatticeWithGram(A);
-    max_norm := Maximum(Diagonal(A));
-    all_vs := ShortVectors(L, max_norm);
-    norms := {v[2] : v in all_vs};
-    norms := Sort([n : n in norms]);
-    minA := [];
     rsub := 0;
-    norm_idx := 0;
-    norm_idx +:= 1;
-    n := norms[norm_idx];
-    minA cat:= &cat[[v[1],-v[1]] : v in all_vs | v[2] eq n];
+    minA := &cat[[v,-v] : v in ShortestVectors(L : Max := max_num div 2)];
     if (#minA ge max_num) then
-	return minA;
+       return minA;
     end if;
     LminA := sub<L | minA>;
     if (LminA eq L) then
@@ -88,9 +93,9 @@ function V_cvp(A : max_num := Infinity())
     A2 := B2 * A * Transpose(B2);
     r := Rank(L1);
     if (r eq Rank(L)) then
-	V_cvp_A2 := [];
+	 V_cvp_A2 := [];
     else
-	V_cvp_A2 := V_cvp(A2 : max_num := max_num);
+	 V_cvp_A2 := V_cvp(A2 : max_num := max_num);
     end if;
     A1_part := [Vector(Rationals(), v)*B1 : v in V_wr_cvp(A1)];
     proj_Z := ChangeRing(Denominator(proj)*proj, Integers());
@@ -126,18 +131,40 @@ function V_best(A)
 end function;
 
 function V_best_with_dual(A)
-    Ad := GramMatrix(LLL(Dual(LatticeWithGram(A))));
+    // We want to track the transformations, so we create the dual by hand
+    // Ld, Td := LLL(Dual(LatticeWithGram(A)));
+    // Ad := GramMatrix(Ld);
+    Ainv := Determinant(A)*A^(-1);
+    Ld, Td := LLL(LatticeWithGram(Ainv));
+    Ad := GramMatrix(Ld);
+    assert Ad eq Td*Ainv*Transpose(Td);
+    mats := [A, Ad];
+    is_dual := [false, true];
     VAs := [];
-    max := Infinity();
-    for B in [A, Ad] do
-        for Vchar in [V_ms, V_cvp] do
-            VA := [Vector(v) : v in Vchar(B : max_num := max)];
-            Append(~VAs, <VA,B>);
-            if (#VA lt max) then
-                max := #VA;
-            end if;
-        end for;
-    end for;
+    // max := Infinity();
+    max := 2^20;
+    found := false;
+    vprintf CanonicalForm, 1: "Finding best characteristic vector set...";
+    while not found do
+	vprintf CanonicalForm, 2: "\n\t allowing for up to %o vectors", max;
+	for j->B in mats do
+	    vprintf CanonicalForm, 3: "\n\t\t trying the %olattice...", is_dual[j] select "dual " else "";
+	    for jj->Vchar in [V_ms, V_cvp] do
+		vprintf CanonicalForm, 4: "\n\t\t\t trying the %o characteristic vector set...", jj eq 1 select "V_ms" else "V_cvp";
+		VA := [Vector(v) : v in Vchar(B : max_num := max)];
+                Append(~VAs, <VA,B,is_dual[j], Td>);
+                if (#VA lt max) then
+		   found := true;
+                   max := #VA;
+                end if;
+                vprintf CanonicalForm, 4 : "Done!"; 
+            end for;
+            vprintf CanonicalForm, 3 : "Done!";
+         end for;
+         vprintf CanonicalForm, 2 :"Done!"; 
+         max := 2*Maximum([#VA[1] : VA in VAs]);
+    end while;
+    vprintf CanonicalForm, 1 : "Done!\n";
     sorted := Sort(VAs, func<x,y | #x[1]-#y[1]>);
     return sorted[1];
 end function;
@@ -200,9 +227,8 @@ end function;
 
 function U_V(A)
     A := ChangeRing(A, Rationals());
-    // at the moment we want the canonical form to actually be the canonical form of A and not of its dual
-    // VA, A := Explode(V_best_with_dual(A));
-    VA := V_best(A);
+    VA, A, is_dual, Td := Explode(V_best_with_dual(A));
+    // VA := V_best(A);
     // This is not really needed, we just keep track of the weights
     // G_A := CompleteGraph(#VA);
     B := ChangeRing(Matrix(VA),Rationals());
@@ -222,7 +248,7 @@ function U_V(A)
     H, U_inv := HermiteForm(QA);
     U := U_inv^(-1);
     assert U*H eq Transpose(Matrix(v));
-    return U, A;
+    return U, A, is_dual, Td;
 end function;
 
 /*
@@ -234,11 +260,29 @@ end function;
 */
 
 intrinsic CanonicalForm(A::AlgMatElt) -> AlgMatElt
-{Return a canonical form for the positive definite matrix A.}
-    Ared := GramMatrix(LLL(LatticeWithGram(A)));
-    U, Ared := U_V(Ared);
+{Return a canonical form for the definite matrix A, together with a matrix T such that Acan = T*A*Transpose(T)}
+    if IsNegativeDefinite(A) then
+      mAcan, mU := CanonicalForm(-A);
+      return -mAcan, mU;
+    end if;
+    require IsPositiveDefinite(A) : "A must be definite";
+    vprintf CanonicalForm, 1 : "Computing canonical form for \n %o\n", A;
+    L, T := LLL(LatticeWithGram(A : CheckPositive := false));
+    Ared := GramMatrix(L);
+    assert T*A*Transpose(T) eq Ared;
+    U, Ared, is_dual, Td := U_V(Ared);
     can_A := Transpose(U)*Ared*U;
-    return can_A;
+    if is_dual then
+      can_Ad := Determinant(can_A)*can_A^(-1);
+      Ud := U^(-1)*Transpose(Td)^(-1)*T;
+      can_A := can_Ad;
+      U := Ud;
+    else
+      U := Transpose(U)*T;
+    end if;
+    assert can_A eq U*A*Transpose(U);
+    vprintf CanonicalForm, 1 : "Done!\n";
+    return can_A, U;
 end intrinsic;
 
 intrinsic CanonicalForm(L::Lat) -> AlgMatElt
