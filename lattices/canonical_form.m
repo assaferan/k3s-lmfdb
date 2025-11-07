@@ -274,7 +274,7 @@ intrinsic CanonicalForm(A::AlgMatElt) -> AlgMatElt
     can_A := Transpose(U)*Ad*U;
     if is_dual then
       Ared := ChangeRing(Ared, Rationals());
-      GrauA := ChangeRing(A, Rationals());
+      A := ChangeRing(A, Rationals());
       assert Ad eq Td*Determinant(Ared)*Ared^(-1)*Transpose(Td);
       U1 := Transpose(U)*Td;
       Aredd := Determinant(Ared)*Ared^(-1);
