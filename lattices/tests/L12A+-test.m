@@ -11,3 +11,6 @@ good_idxs := [j : j in [1..#nums] | nums[j] le 8000];
 bad_idxs := [j : j in [1..#nums] | nums[j] gt 8000];
 assert #bad_idxs eq 3;
 time cans := [CanonicalForm(L12a[j]) : j in good_idxs];
+
+// We can actually also do L12a[14], which has 8256 vectors in the vector set,
+// but this takes 3058.530 seconds
