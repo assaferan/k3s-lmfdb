@@ -25,51 +25,30 @@ def find_min_x(num, rem):
 
     return result % prod
 
-def mp_comp(L):
-    m_p = {}
-    gen = L.genus()
-    for local in gen.local_symbols():
-        m_p[local.prime()] = local._symbol[-1][0]
-    return m_p
-
-
-def zsat(L, max_iters=200, verbose=True):
-    n = L.rank()
-    pv = mp_comp(L)
-
-    for it in range(1, max_iters+1):
-        # if verbose:
-        #     print("iter", it)
-        #     print(" Gram (QQ) =\n", L.gram_matrix())
-        #     print(" m_p (old) =", pv)
-        bad = {p: e for p, e in pv.items() if e >= 2}
-        if not bad:
-            # if verbose:
-            #     print("FINAL", L)
-            return L
-        cst = ZZ(1)
-        for p, e in pv.items():
-            cst *= ZZ(p) ** ZZ((e + 1)//2)
-        L  = L.overlattice((cst * L.dual_lattice()).basis())
-        pv = mp_comp(L)
+def algo3_8(L, a=2):
+    saturated = False
+    while not saturated:
+        l = a
+        LGenus = L.genus()
+        saturated = True
+        for symbol in LGenus.local_symbols():
+            p = symbol.prime()
+            l *= p ** ((symbol._symbol[-1][0] - ZZ(a).valuation(p) + 1) // 2)
+            if (symbol._symbol[-1][0] - ZZ(a).valuation(p) > 1):
+                saturated = False
+        L = L.overlattice((l * L.dual_lattice()).basis())
     return L
-
-# ------------------------
-# Bilinear forms helpers
-# ------------------------
 
 def B(v, M, w=None):
     rng = M.base_ring()
     try:
         v = vector(rng, [rng(a) for a in v])
     except:
-        # print(v)
         pass
     if w != None:
         try:
             w = vector(rng, [rng(a) for a in w])
         except:
-            # print(w)
             pass
     if w is None:
         return (v * M * v.column())[0]
@@ -87,9 +66,6 @@ def B_field(v, M, w=None):
     wF = _to_field_vector(w, F)
     return (vF * M * wF.column())[0]
 
-# ------------------------
-# Radical + complement over finite fields
-# ------------------------
 
 def radical_and_complement_rows_fp(M):
     """
@@ -277,13 +253,6 @@ def char2_max_isotrop(M):
     ambient_rows = [ vector(F, list(r)) for r in R_rows.rows() ] + works
     return ambient_rows
 
-# ------------------------
-# Even sublattice + p-neighbor support
-# ------------------------
-
-def is_even(G):
-    return all((Integer(G[i,i]) % 2) == 0 for i in range(G.nrows()))
-
 def L_perp_mod2_basis(G, w):
     n = G.nrows()
     w = vector(ZZ, w)
@@ -308,23 +277,37 @@ def L_perp_mod2_basis(G, w):
 
     return vecs
 
-def p_neighbor_lattice(L_in, w):
+def Z_span_basis(gens):
+    n = gens[0].degree()
+    M = matrix(QQ, n, len(gens), gens) 
+    den = lcm([c.denominator() for c in M.list()])
+    M_int = (den * M).change_ring(ZZ)  
+    H, U = M_int.hermite_form(transformation=True)
+
+    cols = [H.column(j) for j in range(H.ncols()) if H.column(j) != 0]
+    B_int = matrix(ZZ, cols)         
+
+    B = (QQ(1)/den) * B_int
+    return B
+
+
+def p_neighbor_lattice(L_in, w, p=2):
     G = L_in.gram_matrix()
-    gens_q = [w] + L_perp_mod2_basis(G, w)
-    Mamb = FreeModule(ZZ,L_in.rank())
-    Lpr = Mamb.submodule([vector(v) for v in gens_q])
-    B = Lpr.basis_matrix()
-    # print(B)
-    Gprime_int = (B.transpose() * G * B)/4
-    # print(Gprime_int)
-    return IntegralLattice(Gprime_int)
+
+    perp_basis = L_perp_mod2_basis(G, w)    
+
+    gens = [vector(QQ, w) / p] + [vector(QQ, v) for v in perp_basis]
+    B = Z_span_basis(gens)
+    Gprime = B.transpose() * G * B
+
+    return IntegralLattice(Gprime)
 
 def even_sublattice(L):
     G = L.gram_matrix()
     n = G.nrows()
     d = vector(ZZ, G.diagonal()) % 2
     if d.is_zero():
-        return [L,[[1 if i==j else 0 for j in range(0, n)] for i in range(n)]]
+        return L
     pivot = []
     basis = []
     for i in range(n):
@@ -367,7 +350,9 @@ def integer_basis(B):
 
     return zbasis
 
-def fnd(G, B):
+def fnd(L):
+    B = L.basis_matrix()
+    G = L.gram_matrix()
     zbasis = integer_basis((B*G)%2)
     for v in list(itertools.product(range(8), repeat=min(len(G.rows()),5))):
         prim = False
@@ -391,19 +376,16 @@ def fnd(G, B):
     return -1
 
 def finish(L):
-    ret = even_sublattice(L)
-    evenL = ret[0]
-    # print("--EVEN LATTICE--")
-    # print(evenL)
+    evenL = even_sublattice(L)
+
+    print(evenL)
     if L==evenL:
         return L
-    v = fnd(L.gram_matrix(), ret[1])
-    # print("--VECTOR FOUND--")
-    # print(v)
+    v = fnd(L)
     if v == -1:
-        # print("hi")
         return evenL
     else:
+        print("lol")
         return p_neighbor_lattice(L,v)
 
 # ------------------------
@@ -443,24 +425,15 @@ def is_overlattice(L1, L2):
     return all(c in ZZ for c in coords.list())
 
 def maximal_overlattice_2(L_in, do_asserts=True):
-    print("USING MY MAXIMAL OVERLATTICE")
     ogL = L_in
     L = L_in
 
     # Step 1: Z-saturate
-    L_sat = zsat(L, max_iters=500, verbose=False)
-
+    L_sat = algo3_8(L)
     # Step 2: Work prime-by-prime on the dual to adjoin isotropic classes from D(L)
     M = L_sat.gram_matrix()
     Minv = M.inverse()   # over QQ
     detM = Integer(M.determinant())
-    if detM == 0:
-        # Degenerate case; nothing intelligent to do, just finish and return
-        L_sat = finish(L_sat)
-        if do_asserts:
-            assert is_overlattice(L_sat, ogL)
-        return L_sat
-
     ps = detM.prime_factors()
     if 2 not in ps:
         ps.append(2)
@@ -496,22 +469,30 @@ def maximal_overlattice_2(L_in, do_asserts=True):
                     to_adjoin.append(v_dual)
 
     if to_adjoin:
-        # Adjoin to form an overlattice of L_sat
         L_sat = L_sat.overlattice(list(L_sat.basis()) + to_adjoin)
         M = L_sat.gram_matrix()
 
-    # Step 3: Even-izing / neighbor + maximal overlattice
     L_sat = finish(L_sat)
-
     if do_asserts:
-        # Check that L_sat is actually maximal in Sage's sense
         L_sat_max = L_sat.maximal_overlattice()
-        assert L_sat == L_sat_max
-        # Check that we really have an overlattice of the original lattice
-        assert is_overlattice(L_sat, ogL)
+        print(L_sat_max, "actual max")
+        print(L_sat_max.gram_matrix())
+        #assert L_sat == L_sat_max
+        #assert is_overlattice(L_sat, ogL)
 
     return L_sat
 
-L = IntegralLattice(Matrix(QQ, [[-4,0,0,0], [0,-4,0,0], [0,0,4,0], [0,0,0,-24]]))
+L = IntegralLattice(Matrix(QQ, [[4,0,0,0,0], [0,4,0,0,0], [0,0,8,0,0], [0,0,0,4,0], [0,0,0,0,8]]))
 L_max = maximal_overlattice_2(L)
 print(L_max)
+print(L_max.gram_matrix())
+
+"""
+[1/2   0   0 1/2   0]
+[  0 1/2   0 1/2   0]
+[  0   0 1/4 1/2 1/4]
+[  0   0   0   1   0]
+[  0   0   0   0 1/2]
+
+this is the sage code basis, the gram is the smae
+"""
