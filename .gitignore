@@ -3,3 +3,5 @@
 __pycache__
 data
 *.pyc
+lattices/flasklog
+lattices/slow_queries.log

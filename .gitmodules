@@ -1,0 +1,3 @@
+[submodule "lattices/FiniteGroups"]
+	path = lattices/FiniteGroups
+	url = https://github.com/roed314/FiniteGroups.git
