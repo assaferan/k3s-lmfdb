@@ -104,8 +104,8 @@ procedure fill_genus(label)
                 lat["aut_label"] := "\\N";
             end if;
             // This one needs David's code
-            // lat["aut_group"] := GroupToString(A : use_id:=false);
-            lat["aut_group"] := "\\N"; 
+            lat["aut_group"] := GroupToString(A : use_id:=false);
+            // lat["aut_group"] := "\\N";
             lat["density"] := Density(L);
             lat["dual_density"] := Density(D);
             lat["hermite"] := HermiteNumber(L);
