@@ -29,30 +29,6 @@ function to_postgres(val)
     else
         return val;
     end if;
-    lat["aut_group"] := GroupToString(A : use_id:=false);
-    lat["festi_veniani_index"] := "\\N";
-    lat["density"] := Density(L);
-    lat["dual_density"] := Density(D);
-    lat["hermite"] := HermiteNumber(L);
-    lat["dual_hermite"] := HermiteNumber(D);
-    lat["kissing"] := KissingNumber(L);
-    lat["dual_kissing"] := KissingNumber(D);
-    m := Minimum(L);
-    lat["minimum"] := m;
-    prec := Max(StringToInteger(basics["theta_prec"]), m+4);
-    lat["theta_series"] := Eltseq(ThetaSeries(L, prec - 1));
-    lat["theta_prec"] := prec;
-    lat["dual_theta_series"] := Eltseq(ThetaSeries(D, prec - 1));
-    // Need dual_label, dual_conway
-    // Compute festi_veniani_index in Sage?
-    // Need label for lattice.  Don't want the label to rely on a difficult computation.  So we should probably avoid using the canonical form, and maybe avoid the automorphism group.
-    // Proposal: Sort lexicographically by:
-    // 1. Size of automorphism group (larger first): unfortunately this may be hard to compute
-    // 2. Density
-    // 3. theta series
-    // 4. dual theta series
-    // 5. arbitrary tiebreaker
-    Append(~lats, lat);
 end function;
 
 procedure fill_genus(label)
@@ -188,6 +164,16 @@ procedure fill_genus(label)
     end function;
 
     // Tie breaker
+      
+    // Need dual_label, dual_conway
+    // Compute festi_veniani_index in Sage?
+    // Need label for lattice.  Don't want the label to rely on a difficult computation.  So we should probably avoid using the canonical form, and maybe avoid the automorphism group.
+    // Proposal: Sort lexicographically by:
+    // 1. Size of automorphism group (larger first): unfortunately this may be hard to compute
+    // 2. Density
+    // 3. theta series
+    // 4. dual theta series
+    // 5. arbitrary tiebreaker
     // TODO: Sort reps according to canonical form?
     if (n eq s) then
         lats := Sort(lats, cmp_lat);
