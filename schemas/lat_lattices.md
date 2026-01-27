@@ -57,3 +57,7 @@ Label: `dimension.signature.determinant.genus_spec.tiebreaker` where
 | dual_density | numeric | the center density of the dual lattice (only for definite lattices) |
 | dual_det | bigint | the determinant of the dual lattice |
 | dual_conway | text | the Conway symbol for the dual lattice |
+| is_universal | boolean | whether the lattice represents all positive integers |
+| is_indecomposable | boolean | whether the lattice is (orthogonally) indecomposable |
+| is_additively_indecomposable | boolean | whether the lattice is additively indecomposable |
+| orthogonal_decomposition | text[] | the orthogonal decomposition of the lattice (given as a list of lattice labels) |
