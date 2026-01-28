@@ -18,7 +18,9 @@ function dict_to_jsonb(dict)
 end function;
 
 function to_postgres(val)
-    if Type(val) in [SeqEnum, Tup] then
+    if Type(val) eq MonStgElt then
+        return "\"" * val * "\"";
+    elif Type(val) in [SeqEnum, Tup] then
         return "{" * Join([Sprintf("%o",to_postgres(x)) : x in val],",") * "}";
     elif Type(val) eq Assoc then
         val_prime := AssociativeArray();
@@ -69,11 +71,11 @@ procedure fill_genus(label)
         for p in hecke_primes(n) do
             Ap := AdjacencyMatrix(Genus(L0),p);
             fpf := Factorization(CharacteristicPolynomial(Ap));
-            hecke_mats[p] := to_postgres(Eltseq(Ap));
-            hecke_polys[p] := to_postgres([(<Coefficients(pair[1]), pair[2]>) : pair in fpf]);
+            hecke_mats[Sprint(p)] := Eltseq(Ap);
+            hecke_polys[Sprint(p)] := [<Coefficients(pair[1]), pair[2]> : pair in fpf];
         end for;
-        advanced["adjacency_matrix"] := dict_to_jsonb(hecke_mats);
-        advanced["adjacency_polynomials"] := dict_to_jsonb(hecke_polys);
+        advanced["adjacency_matrix"] := to_postgres(hecke_mats);
+        advanced["adjacency_polynomials"] := to_postgres(hecke_polys);
     else
         advanced["adjacency_matrix"] := "\\N";
         advanced["adjacency_polynomials"] := "\\N";
@@ -83,7 +85,7 @@ procedure fill_genus(label)
     disc_invs := eval disc_invs;
     disc_aut_size := #AutomorphismGroup(AbelianGroup(disc_invs)); 
 
-    for L in reps do
+    for Li->L in reps do
         lat := AssociativeArray();
         for col in ["rank", "signature", "det", "disc", "discriminant_group_invs", "is_even"] do
             lat[col] := basics[col];
@@ -92,7 +94,7 @@ procedure fill_genus(label)
         D := Dual(L);
         lat["dual_det"] := Determinant(D);
         gram := GramMatrix(L);
-        if (n eq s) then 
+        if (n eq s) then
             lat["gram"] := Eltseq(CanonicalForm(gram));
             A := AutomorphismGroup(L);
             lat["aut_size"] := #A;
@@ -114,10 +116,15 @@ procedure fill_genus(label)
             lat["dual_kissing"] := KissingNumber(D);
             m := Minimum(L);
             lat["minimum"] := m;
-            prec := Max(StringToInteger(basics["theta_prec"]), m+4);
-            lat["theta_series"] := AbsEltseq(ThetaSeries(L, prec - 1));
+            prec := Max(150, m+4);
+            lat["theta_series"] := Eltseq(ThetaSeries(L, prec - 1));
             lat["theta_prec"] := prec;
-            lat["dual_theta_series"] := AbsEltseq(ThetaSeries(D, prec - 1));
+            lat["dual_theta_series"] := Eltseq(ThetaSeries(D, prec - 1));
+            pne := AssociativeArray();
+            for p->hmat in hecke_mats do
+                pne[p] := [i : i in [1..#reps] | hmat[(Li-1)*(#reps)+i] gt 0];
+            end for;
+            lat["pneighbors"] := pne;
         else
             lat["gram"] := Eltseq(gram);
             // !!!  TODO - Need to be able to compute the automorphism group for non-definite lattices
@@ -135,8 +142,23 @@ procedure fill_genus(label)
             lat["theta_series"] := "\\N";
             lat["theta_prec"] := "\\N";
             lat["dual_theta_series"] := "\\N";
+            lat["pneighbors"] := "\\N";
         end if;
-        
+        lat["dual_label"] := "\\N"; // set in next stage
+        lat["is_indecomposable"] := "\\N"; // set in next stage
+        lat["is_additively_indecomposable"] := "\\N"; // set in next stage
+        lat["orthogonal_factors"] := "\\N"; // set in next stage
+        lat["orthogonal_multiplicities"] := "\\N"; // set in next stage
+        lat["tensor_decomposition"] := "\\N"; // set in next stage
+        lat["is_tensor_product"] := "\\N"; // set in next stage
+        lat["root_sublattice"] := "\\N"; // set in next stage
+        lat["root_complement"] := "\\N"; // set in next stage
+        lat["even_sublattice"] := "\\N"; // set in next stage
+        lat["even_complement"] := "\\N"; // set in next stage
+        lat["norm1_sublattice"] := "\\N"; // set in next stage
+        lat["norm1_complement"] := "\\N"; // set in next stage
+        lat["Zn_complement"] := "\\N"; // set in next stage
+
         lat["level"] := Level(LatticeWithGram(ChangeRing(GramMatrix(L), Integers()) : CheckPositive:=false));
         
         // Need dual_label, dual_conway
@@ -184,6 +206,9 @@ procedure fill_genus(label)
         // Need label for lattice.
         lat := L;
         lat["label"] := Sprintf("%o.%o", basics["label"], idx);
+    end for;
+    for lat in lats do
+        lat["pneighbors"] := [lats[i]["label"] : i in lat["pneighbors"]];
         output := Join([Sprintf("%o", to_postgres(lat[k])) : k in lat_format], "|");
         Write("lattice_data/" * lat["label"], output : Overwrite);
     end for;
