@@ -222,9 +222,9 @@ procedure fill_genus(label)
     // 4. dual theta series
     // 5. arbitrary tiebreaker
     // TODO: Sort reps according to canonical form?
+    perm := [1..#lats]
     if (n eq s) then
-        // TODO: Need to apply permutation to adjacency matrix hecke_mats
-        lats := Sort(lats, cmp_lat);
+        Sort(~lats, cmp_lat, ~perm);
     end if;
 
     SetColumns(0);
@@ -238,7 +238,8 @@ procedure fill_genus(label)
         if (n eq s) then
             pNeighbors := AssociativeArray();
             for p in hecke_primes(n) do
-                pNeighbors[p] := ["\"" * lats[j]["label"] * "\"" : j in [1..#lats] | hecke_mats[p][idx,j] ne 0];
+                // !!! TODO - check that permutation is applied in the right direction
+                pNeighbors[p] := ["\"" * lats[j]["label"] * "\"" : j in [1..#lats] | hecke_mats[p][perm[idx],perm[j]] ne 0];
             end for;
             lat["pneighbors"] := to_postgres(pNeighbors);
         else
