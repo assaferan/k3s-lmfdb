@@ -3,6 +3,8 @@
 
 AttachSpec("lattices.spec");
 
+import "neighbours.mag" : neighbours;
+
 function hecke_primes(rank)
     if rank lt 8 then
         return [2,3,5];
@@ -49,7 +51,7 @@ function RescaledDualNF(L)
     return NumberFieldLattice(Rows(ChangeRing(B, K)) : InnerProduct := ChangeRing(M,K));
 end function;
 
-procedure fill_genus(label)
+procedure fill_genus(label : genus_reps_func := GenusRepresentatives)
     data := Split(Split(Read("genera_basic/" * label), "\n")[1], "|");
     basic_format := Split(Read("genera_basic.format"), "|");
     advanced_format := Split(Read("genera_advanced.format"), "|");
@@ -82,13 +84,18 @@ procedure fill_genus(label)
     rep := "[" * rep[2..#rep - 1] * "]"; // Switch to square brackets
     gram0 := Matrix(K, n, eval rep);
     L0 := LWG(gram0);
-    reps := GenusRepresentatives(L0);
+    // reps := GenusRepresentatives(L0);
+    reps := genus_reps_func(L0);
     advanced["class_number"] := #reps;
     if n eq s then
         hecke_mats := AssociativeArray();
         hecke_polys := AssociativeArray();
+        // in case this is not the intrinsic, we need to set the reps for the adjacency matrix
+        G := Genus(L0);
+        // This works for 2.28 - should be replaced by SetGenus in 2.29
+        G`Representatives := reps;
         for p in hecke_primes(n) do
-            Ap := AdjacencyMatrix(Genus(L0),p);
+            Ap := AdjacencyMatrix(G,p);
             fpf := Factorization(CharacteristicPolynomial(Ap));
             hecke_mats[p] := Ap;
             hecke_polys[p] := [(<Coefficients(pair[1]), pair[2]>) : pair in fpf];
@@ -222,9 +229,9 @@ procedure fill_genus(label)
     // 4. dual theta series
     // 5. arbitrary tiebreaker
     // TODO: Sort reps according to canonical form?
+    perm := [1..#lats];
     if (n eq s) then
-        // TODO: Need to apply permutation to adjacency matrix hecke_mats
-        lats := Sort(lats, cmp_lat);
+        Sort(~lats, cmp_lat, ~perm);
     end if;
 
     SetColumns(0);
@@ -238,7 +245,8 @@ procedure fill_genus(label)
         if (n eq s) then
             pNeighbors := AssociativeArray();
             for p in hecke_primes(n) do
-                pNeighbors[p] := ["\"" * lats[j]["label"] * "\"" : j in [1..#lats] | hecke_mats[p][idx,j] ne 0];
+                // !!! TODO - check that permutation is applied in the right direction
+                pNeighbors[p] := ["\"" * lats[j]["label"] * "\"" : j in [1..#lats] | hecke_mats[p][idx^perm,j^perm] ne 0];
             end for;
             lat["pneighbors"] := to_postgres(pNeighbors);
         else
@@ -256,6 +264,7 @@ procedure fill_genus(label)
 end procedure;
 
 try
+    // fill_genus(label : genus_reps_func := neighbours);
     fill_genus(label);
 catch e
     E := Open("/dev/stderr", "a");
