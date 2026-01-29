@@ -16,7 +16,9 @@ function dict_to_jsonb(dict)
 end function;
 
 function to_postgres(val)
-    if Type(val) eq MonStgElt then
+    if val cmpeq "\\N" then
+        return val;
+    elif Type(val) eq MonStgElt then
         return "\"" * val * "\""; // This will fail if the string has quotes, but I don't think that's ever true for us.
     elif Type(val) in [SeqEnum, Tup] then
         return "{" * Join([Sprintf("%o",to_postgres(x)) : x in val],",") * "}";
@@ -123,6 +125,8 @@ procedure fill_genus(label)
                 pne[p] := [i : i in [1..#reps] | hmat[(Li-1)*(#reps)+i] gt 0];
             end for;
             lat["pneighbors"] := pne; // adjusted below
+            minima, vecs := SuccessiveMinima(L); // for now we just throw vecs away
+            lat["successive_minima"] := minima;
         else
             lat["gram"] := Eltseq(gram);
             // !!!  TODO - Need to be able to compute the automorphism group for non-definite lattices
@@ -141,6 +145,7 @@ procedure fill_genus(label)
             lat["theta_prec"] := "\\N";
             lat["dual_theta_series"] := "\\N";
             lat["pneighbors"] := "\\N";
+            lat["successive_minima"] := "\\N";
         end if;
         lat["dual_label"] := "\\N"; // set in next stage
         lat["is_indecomposable"] := "\\N"; // set in next stage
@@ -158,8 +163,6 @@ procedure fill_genus(label)
         lat["Zn_complement"] := "\\N"; // set in next stage
 
         lat["level"] := Level(LatticeWithGram(ChangeRing(GramMatrix(L), Integers()) : CheckPositive:=false));
-
-        // Compute festi_veniani_index in Sage?
 
         // TODO - do we also need these? or should we only keep them for the genus?
         lat["genus_label"] := basics["label"];
