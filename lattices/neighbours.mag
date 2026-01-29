@@ -1,0 +1,90 @@
+// A very quick lattice hash.  This is better with a faster
+// OrthogonalDecomposition (cf. my email)
+function root_sub(lat)
+  rl := {*Strings()|*};
+  if Minimum(lat) eq 2 then
+    sl := sub<lat|ShortestVectors(lat)>;
+    Zn := RSpace(Z,Dimension(lat));
+    slzn := sub<Zn|[Eltseq(i): i in ShortestVectors(lat)]>;
+    tor := Moduli(Saturation(slzn)/slzn);
+    od := OrthogonalDecomposition(sl);
+    for i in od do
+      sdi := IntegerToString(Dimension(i));
+      for l in ["A","D","E"] do
+	if IsIsomorphic(i,LatticeWithGram(CartanMatrix(l*sdi))) then
+	  Include(~rl,l*sdi);
+	  continue i;
+	end if;
+      end for;
+      error "impossible root lattice", Eltseq(GramMatrix(lat));
+    end for;
+  end if;
+  return rl,tor,#ShortVectors(lat,4,4);
+end function;
+
+// Function to enumerate the p-neighbourhood of a lattice.  Arguments:
+
+// pd: the lattice
+// bd: stop after considering this number of lattices
+// thorough: check properly for isomorphism (this is slower, but necessary
+// once my basic lattice invariants no longer distinguish)
+// avoid: do not consider lattices with these invariants (because it would
+// take too long to work out their automorphism group)
+// target: stop once reaching a lattice with these invariants
+// lose_mass: stop once the total mass of the lattices found is at least
+// (mass of genus) - this
+// p: the prime for p-neighbours
+// show: show Gram matrices as we find the lattices
+// done: initial list of lattices in the genus
+// max_nonroot: stop after finding this many lattices that aren't root lattices
+// silent: stops the code from babbling (overridden by "show")
+// aut_gp_fn, isom_fn, nb_fn: custom functions for finding Aut(L), an
+// isomorphism L -> L', and the p-neighbours of a lattice
+
+// Unfortunately this code calls on some internal Magma functionality that
+// changes the basis and doesn't carry the automorphism group along, so these
+// last three are not very useful.
+
+function neighbours(pd:bd := Infinity(),thorough := false, avoid := {}, target := <{*"A999"*},[1001]>, lose_mass := 0, p := 2, show := false, done := {@@}, max_nonroot := Infinity(), silent := false, aut_gp_fn := AutomorphismGroup, isom_fn := IsIsomorphic, nb_fn := Neighbours)
+  _ := aut_gp_fn(pd);
+  g := Genus(pd);
+  mass := Mass(pd) - lose_mass;
+  todo := {@pd@}; rss := [];
+  cp := Cputime();
+  ct := 0;
+  while #todo gt 0 and #done lt bd and &+[Q|1/#aut_gp_fn(i): i in done] lt mass do
+    ct +:= 1;
+    if not silent then
+      if ct mod 100 eq 0 then
+        printf "%o done, %o found, %o left, time taken %o\n", ct, #done, #todo, Cputime(cp);
+      else printf ".";
+      end if;
+    end if;
+    ind := Random(1,#todo);
+    if not silent and <a,b,c> in avoid where a,b,c is root_sub(todo[ind]) then printf "b"; continue; end if;
+    // if forall{r: r in done|(<a,b,c> ne <d,e,f> where a,b,c is root_sub(todo[ind]) where d,e,f is root_sub(r)) or (thorough and not isom_fn(todo[ind],r))} then
+    if forall{r: r in [1..#done]|(<a,b,c> ne rss[r] where a,b,c is root_sub(todo[ind])) or (thorough and not isom_fn(todo[ind],done[r]))} then
+      nlat := [LatticeWithGram(GramMatrix(n)): n in nb_fn(todo[ind],p)];
+      if <a,b,c> notin avoid where a,b,c is root_sub(todo[ind]) then
+	Include(~done,todo[ind]);
+	if show then Eltseq(GramMatrix(todo[ind])); end if;
+	Append(~rss,<a,b,c> where a,b,c is root_sub(todo[ind]));
+        // this could show up as 0 without being 0
+	if not silent then Append(Append(<a,b,c> where a,b,c is root_sub(todo[ind]),RealField(5)!(mass-&+[1/#aut_gp_fn(i): i in done])),#aut_gp_fn(todo[ind])); end if;
+        if #[x: x in done|Rank(x) ne Rank(sub<x|ShortestVectors(x)>)] gt max_nonroot then return done,rss,g; end if;
+      end if;
+      todo := {@todo[i]: i in [1..#todo]|i ne ind@};
+      if &+[1/#aut_gp_fn(i): i in done] ne mass then
+	todo join:= (thorough select {@x: x in nlat|(<a,b,c> notin avoid where a,b,c is root_sub(x)) and forall{i: i in done|not isom_fn(x,i)}@} else {@x: x in nlat|<a,b,c> notin rss where a,b,c is root_sub(x)@});
+      end if;
+    else
+      todo := {@todo[i]: i in [1..#todo]|i ne ind@};
+    end if;
+    // error if &+[1/#aut_gp_fn(i): i in done] gt mass, "too heavy";
+    if exists{r: r in rss|<r[1],r[2]> eq target} then return done, rss,g; end if;
+  end while;
+  if &+[1/#aut_gp_fn(i): i in done] eq mass then
+    g`Representatives := Setseq(done);
+  end if;
+  return done,rss,g;
+end function;
