@@ -613,7 +613,7 @@ def create_genus_entry(genus_symbol):
     dual_local_symbols = [LocalGenusSymbol(dual, p) for p in (2*ddet).prime_divisors()]
     dual_symbol = GenusSymbol_global_ring(genus_symbol.signature_pair(), dual_local_symbols, representative=dual)
     table_row['dual_conway'] = conway_symbol(dual_symbol)
-    table_row['theta_prec'] = 150 # Every trace_bound currently in the LMFDB of Gamma0(N) or Gamma(N,chi) for chi a quadratic character has trace bound less than 150.
+    # Every trace_bound currently in the LMFDB of Gamma0(N) or Gamma(N,chi) for chi a quadratic character has trace bound less than 150.
 
     # sage: list(db.mf_newspaces.search({"trace_bound":{"$gte":100}}, ["label", "trace_bound"]))
     # [{'label': '3912.1.cp', 'trace_bound': 201}, {'label': '3600.2.x', 'trace_bound': 101}, {'label': '6336.2.m', 'trace_bound': 143}, {'label': '7056.2.k', 'trace_bound': 121}, {'label': '9248.2.a', 'trace_bound': 145}]
@@ -681,7 +681,8 @@ COL_TYPE_LATTICE_GENUS = {'det': 'bigint',
  'class_number': 'smallint',
  'adjacency_matrix': 'jsonb',
  'adjacency_polynomials': 'jsonb',
- 'theta_prec' : 'smallint'}
+ 'theta_prec' : 'smallint',
+ 'dual_conway_symbol' : 'text'}
 
 COL_TYPE_LATTICE = {'det': 'bigint',
  'disc': 'bigint',
@@ -713,8 +714,23 @@ COL_TYPE_LATTICE = {'det': 'bigint',
  'dual_label': 'text',
  'genus_label': 'text',
  'label': 'text',
- 'aut_group' : 'text',
- 'theta_prec' : 'smallint'}
+ 'aut_group': 'text',
+ 'theta_prec': 'smallint',
+ 'name': 'text',
+ 'is_indecomposable': 'boolean',
+ 'is_additively_indecomposable': 'boolean',
+ 'orthogonal_factors': 'text[]',
+ 'orthogonal_multiplicities': 'smallint[]',
+ 'tensor_decompositions': 'jsonb',
+ 'is_tensor_product': 'boolean',
+ 'root_sublattice': 'text',
+ 'root_complement': 'text',
+ 'even_sublattice': 'text',
+ 'even_complement': 'text',
+ 'norm1_sublattice': 'text',
+ 'norm1_complement': 'text',
+ 'Zn_complement': 'text',
+ 'successive_minima': 'integer'}
 
 FIELDS_LATTICE_GENUS = ["genera_basic.format", "genera_advanced.format"]
 FIELDS_LATTICE = ["lat.format"]

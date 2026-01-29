@@ -1,8 +1,6 @@
 // This file is used to find all of the representatives in a positive definite genus, along with some difficult to compute quantities about the genus itself.
 // Usage: parallel -j 100 --timeout 1800 -a genera_todo.txt magma -b label:={} fill_genus.m
 
-// Todo: attach finite group code for IO.m and GroupToString
-// AttachSpec("/Users/roed/sage/FiniteGroups/Code/spec");
 AttachSpec("lattices.spec");
 
 function hecke_primes(rank)
@@ -55,7 +53,7 @@ procedure fill_genus(label)
     data := Split(Split(Read("genera_basic/" * label), "\n")[1], "|");
     basic_format := Split(Read("genera_basic.format"), "|");
     advanced_format := Split(Read("genera_advanced.format"), "|");
-    lat_format := Split(Read("lat.format"), "|");
+    lat_format := Split(Split(Read("lat.format"), "\n")[1], "|");
     assert #data eq #basic_format;
     basics := AssociativeArray();
     for i in [1..#data] do
@@ -106,7 +104,7 @@ procedure fill_genus(label)
     disc_invs := eval disc_invs;
     disc_aut_size := #AutomorphismGroup(AbelianGroup(disc_invs)); 
 
-    for L in reps do
+    for Li->L in reps do
         lat := AssociativeArray();
         for col in ["rank", "signature", "det", "disc", "discriminant_group_invs", "is_even"] do
             lat[col] := basics[col];
@@ -119,7 +117,8 @@ procedure fill_genus(label)
         lat["dual_label"] := "\\N";
         // TODO := The code for ConwaySymbol is currently in sage. 
         // The magma implemntation is in version 2.29 that has some bugs
-        lat["dual_conway"] := "\\N";
+        // This is no longer part of the lattice, only of the genus
+        // lat["dual_conway"] := "\\N";
         gram := GramMatrix(L);
         if (n eq s) then 
             // TODO : This is lossy - change later
@@ -145,10 +144,10 @@ procedure fill_genus(label)
             lat["dual_kissing"] := KissingNumber(D);
             m := Minimum(L);
             lat["minimum"] := m;
-            prec := Max(StringToInteger(basics["theta_prec"]), m+4);
-            lat["theta_series"] := AbsEltseq(ThetaSeries(L, prec - 1));
+            prec := Max(150, m+4);
+            lat["theta_series"] := Eltseq(ThetaSeries(L, prec - 1));
             lat["theta_prec"] := prec;
-            lat["dual_theta_series"] := AbsEltseq(ThetaSeries(D, prec - 1));
+            lat["dual_theta_series"] := Eltseq(ThetaSeries(D, prec - 1));
         else
             lat["gram"] := Eltseq(gram);
             // At the moment we do not have a notion of a canonical gram in the indefinite case
@@ -169,12 +168,27 @@ procedure fill_genus(label)
             lat["theta_prec"] := "\\N";
             lat["dual_theta_series"] := "\\N";
         end if;
-        
+        lat["dual_label"] := "\\N"; // set in next stage
+        lat["is_indecomposable"] := "\\N"; // set in next stage
+        lat["is_additively_indecomposable"] := "\\N"; // set in next stage
+        lat["orthogonal_factors"] := "\\N"; // set in next stage
+        lat["orthogonal_multiplicities"] := "\\N"; // set in next stage
+        lat["tensor_decompositions"] := "\\N"; // set in next stage
+        lat["is_tensor_product"] := "\\N"; // set in next stage
+        lat["root_sublattice"] := "\\N"; // set in next stage
+        lat["root_complement"] := "\\N"; // set in next stage
+        lat["even_sublattice"] := "\\N"; // set in next stage
+        lat["even_complement"] := "\\N"; // set in next stage
+        lat["norm1_sublattice"] := "\\N"; // set in next stage
+        lat["norm1_complement"] := "\\N"; // set in next stage
+        lat["Zn_complement"] := "\\N"; // set in next stage
+        lat["name"] := "\\N"; // set in next stage
+        lat["successive_minima"] := "\\N"; // set in next stage
+
         lat["level"] := Level(LatticeWithGram(ChangeRing(GramMatrix(L), Integers()) : CheckPositive:=false));
-        
-        // Need dual_label, dual_conway
+
         // Compute festi_veniani_index in Sage?
-        
+
         // TODO - do we also need these? or should we only keep them for the genus?
         lat["genus_label"] := basics["label"];
         lat["conway_symbol"] := basics["conway_symbol"];
@@ -230,14 +244,15 @@ procedure fill_genus(label)
         else
             lat["pneighbors"] := "\\N";
         end if;
-        error if #Keys(lat) ne #lat_format, "%o", [k : k in lat_format | k notin Keys(lat)];
+        Remove(~lat, "theta_prec");
+        error if Keys(lat) ne Set(lat_format), [k : k in lat_format | k notin Keys(lat)], [k : k in Keys(lat) | k notin lat_format];
         output := Join([Sprintf("%o", to_postgres(lat[k])) : k in lat_format], "|");
         Write("lattice_data/" * lat["label"], output : Overwrite);
     end for;
-
+    error if Keys(basics) ne Set(basic_format), [k : k in basic_format | k notin Keys(basics)], [k : k in Keys(basics) | k notin basic_format];
+    error if Keys(advanced) ne Set(advanced_format), [k : k in advanced_format | k notin Keys(advanced)], [k : k in Keys(advanced) | k notin advanced_format];
     output := Join([basics[k] : k in basic_format] cat [Sprintf("%o", advanced[k]) : k in advanced_format], "|");
     Write("genera_advanced/" * label, output : Overwrite);
-
 end procedure;
 
 try
