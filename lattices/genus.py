@@ -665,26 +665,81 @@ def fill_genus_entry(label, hecke_primes=[2]):
     return genus_row, lattice_rows
 
 # The fields here are copied from the schema
-COL_TYPE_LATIICE_GENUS = {'label' : 'text',
-                          'rank'  : 'smallint',
-                          'signature' : 'smallint',
-                          #'class_number' : 'smallint',
-                          'det' : 'bigint',
-                          'disc' : 'bigint',
-                          'conway_symbol' : 'text',
-                          'level' : 'bigint',
-                          'is_even' : 'boolean',
-                          'discriminant_group_invs' : 'integer[]',
-                          'discriminant_form' : 'integer[]',
-                          'rep' : 'integer[]', # We add this one as input for fill_genus.m
-                          #'adjacency_matrix' : 'jsonb',
-                          #'adjacency_polynomials' : 'jsonb',
-                          'mass' : 'numeric[]',
-}
+COL_TYPE_LATTICE_GENUS = {'det': 'bigint',
+ 'disc': 'bigint',
+ 'id': 'bigint',
+ 'level': 'bigint',
+ 'rank': 'smallint',
+ 'signature': 'smallint',
+ 'is_even': 'boolean',
+ 'discriminant_form': 'integer[]',
+ 'discriminant_group_invs': 'integer[]',
+ 'conway_symbol': 'text',
+ 'label': 'text',
+ 'rep': 'integer[]',
+ 'mass': 'numeric[]',
+ 'class_number': 'smallint',
+ 'adjacency_matrix': 'jsonb',
+ 'adjacency_polynomials': 'jsonb',
+ 'theta_prec' : 'smallint',
+ 'dual_conway_symbol' : 'text'}
 
-def write_header_to_file(fname, sep = "|", col_type=COL_TYPE_LATIICE_GENUS):
+COL_TYPE_LATTICE = {'det': 'bigint',
+ 'disc': 'bigint',
+ 'dual_det': 'bigint',
+ 'dual_kissing': 'bigint',
+ 'id': 'bigint',
+ 'kissing': 'bigint',
+ 'level': 'bigint',
+ 'festi_veniani_index': 'integer',
+ 'minimum': 'integer',
+ 'class_number': 'smallint',
+ 'rank': 'smallint',
+ 'signature': 'smallint',
+ 'is_even': 'boolean',
+ 'canonical_gram': 'integer[]',
+ 'discriminant_group_invs': 'integer[]',
+ 'gram': 'integer[]',
+ 'pneighbors': 'jsonb',
+ 'aut_size': 'numeric',
+ 'density': 'numeric',
+ 'dual_density': 'numeric',
+ 'dual_hermite': 'numeric',
+ 'hermite': 'numeric',
+ 'dual_theta_series': 'numeric[]',
+ 'theta_series': 'numeric[]',
+ 'aut_label': 'text',
+ 'conway_symbol': 'text',
+ 'dual_conway': 'text',
+ 'dual_label': 'text',
+ 'genus_label': 'text',
+ 'label': 'text',
+ 'aut_group': 'text',
+ 'theta_prec': 'smallint',
+ 'name': 'text',
+ 'is_indecomposable': 'boolean',
+ 'is_additively_indecomposable': 'boolean',
+ 'orthogonal_factors': 'text[]',
+ 'orthogonal_multiplicities': 'smallint[]',
+ 'tensor_decompositions': 'jsonb',
+ 'is_tensor_product': 'boolean',
+ 'root_sublattice': 'text',
+ 'root_complement': 'text',
+ 'even_sublattice': 'text',
+ 'even_complement': 'text',
+ 'norm1_sublattice': 'text',
+ 'norm1_complement': 'text',
+ 'Zn_complement': 'text',
+ 'successive_minima': 'integer'}
+
+FIELDS_LATTICE_GENUS = ["genera_basic.format", "genera_advanced.format"]
+FIELDS_LATTICE = ["lat.format"]
+
+def write_header_to_file(fname, sep = "|", col_type=COL_TYPE_LATTICE_GENUS, fields=FIELDS_LATTICE_GENUS):
     # we want to have a well defined order, matching the entries
-    fields = sorted(list(col_type.keys()))
+    #fields = open("genera_basic.format").read().split("|")
+    #fields += open("genera_advanced.format").read().split("|")
+    fields = reduce(lambda x,y: x+y, [open(f).read().split("|") for f in fields])
 
     header_lines = [sep.join(fields), sep.join([col_type[k] for k in fields]), "\n"]
     
@@ -711,7 +766,7 @@ def value_to_postgres(val):
         return "T" if val else "F"
     return str(val)
 
-def write_entries_to_file(entries, fname, sep = "|", col_type=COL_TYPE_LATIICE_GENUS):
+def write_entries_to_file(entries, fname, sep = "|", col_type=COL_TYPE_LATTICE_GENUS):
     # we want to have a well defined order, matching the entries
     # fields = sorted(list(col_type.keys()))
     with open("genera_basic.format") as f:
@@ -724,7 +779,7 @@ def write_entries_to_file(entries, fname, sep = "|", col_type=COL_TYPE_LATIICE_G
         f.write("\n")
     f.close()
 
-def write_header_and_entries(entries, fname, sep = "|", col_type=COL_TYPE_LATIICE_GENUS):
+def write_header_and_entries(entries, fname, sep = "|", col_type=COL_TYPE_LATTICE_GENUS):
     write_header_to_file(fname, sep = sep, col_type=col_type)
     write_entries_to_file(entries, fname, sep = sep, col_type=col_type)
 

@@ -3,6 +3,8 @@
 
 AttachSpec("lattices.spec");
 
+import "neighbours.mag" : neighbours;
+
 function hecke_primes(rank)
     if rank lt 8 then
         return [2,3,5];
@@ -12,20 +14,23 @@ function hecke_primes(rank)
 end function;
 
 function dict_to_jsonb(dict)
-    return "{" * Join([Sprintf("%o:%o", key, dict[key]) : key in Keys(dict)], ",") * "}";
+    return "{" * Join([Sprintf("\"%o\":%o", key, dict[key]) : key in Keys(dict)], ",") * "}";
 end function;
 
-function to_postgres(val)
-    if val cmpeq "\\N" then
+function to_postgres(val : jsonb_val := false)
+    delims := jsonb_val select "[]" else "{}";
+    if ISA(Type(val),Mtrx) then
+        return to_postgres(Eltseq(val) : jsonb_val:=jsonb_val);
+    elif val cmpeq "\\N" then
         return val;
     elif Type(val) eq MonStgElt then
         return "\"" * val * "\""; // This will fail if the string has quotes, but I don't think that's ever true for us.
     elif Type(val) in [SeqEnum, Tup] then
-        return "{" * Join([Sprintf("%o",to_postgres(x)) : x in val],",") * "}";
+        return delims[1] * Join([Sprintf("%o",to_postgres(x : jsonb_val)) : x in val],",") * delims[2];
     elif Type(val) eq Assoc then
         val_prime := AssociativeArray();
         for key in Keys(val) do
-            val_prime[to_postgres(key)] := to_postgres(val[key]);
+            val_prime[to_postgres(key)] := to_postgres(val[key] : jsonb_val);
         end for;
         return dict_to_jsonb(val_prime);
     else
@@ -33,15 +38,33 @@ function to_postgres(val)
     end if;
 end function;
 
-procedure fill_genus(label)
+function RescaledDualNF(L)
+    Q := Rationals();
+    K := BaseRing(L);
+    B := ChangeRing(BasisMatrix(L),Q);
+    M := ChangeRing(InnerProductMatrix(L),Q);
+    F := ChangeRing(GramMatrix(L),Q);
+    B := F^-1 * B;
+    B := IntegralMatrix(B);
+    B div:= GCD(Eltseq(B));
+    F := B * M * Transpose(B);
+    F, d := IntegralMatrix(F);
+    g := GCD(Eltseq(F));
+    F div:= g;
+    M := (d/g) * M;
+    return NumberFieldLattice(Rows(ChangeRing(B, K)) : InnerProduct := ChangeRing(M,K));
+end function;
+
+procedure fill_genus(label : genus_reps_func := GenusRepresentatives)
     data := Split(Split(Read("genera_basic/" * label), "\n")[1], "|");
     basic_format := Split(Read("genera_basic.format"), "|");
     advanced_format := Split(Read("genera_advanced.format"), "|");
-    lat_format := Split(Read("lat.format"), "|");
+    lat_format := Split(Split(Read("lat.format"), "\n")[1], "|");
     assert #data eq #basic_format;
     basics := AssociativeArray();
     for i in [1..#data] do
         basics[basic_format[i]] := data[i];
+        if data[i] eq "None" then basics[basic_format[i]] := "\\N"; end if;
     end for;
     advanced := AssociativeArray();
     lats := [];
@@ -53,26 +76,33 @@ procedure fill_genus(label)
         assert n gt 2;
         K := RationalsAsNumberField();
         LWG := NumberFieldLatticeWithGram;
+        DualLat := RescaledDualNF;
     else
         assert n eq s;
         K := Rationals();
         LWG := LatticeWithGram;
+        DualLat := Dual; 
     end if;
     rep := basics["rep"];
     // Switch to square brackets
     rep := "[" * rep[2..#rep - 1] * "]"; // Switch to square brackets
     gram0 := Matrix(K, n, eval rep);
     L0 := LWG(gram0);
-    reps := GenusRepresentatives(L0);
+    // reps := GenusRepresentatives(L0);
+    reps := genus_reps_func(L0);
     advanced["class_number"] := #reps;
     if n eq s then
         hecke_mats := AssociativeArray();
         hecke_polys := AssociativeArray();
+        // in case this is not the intrinsic, we need to set the reps for the adjacency matrix
+        G := Genus(L0);
+        // This works for 2.28 - should be replaced by SetGenus in 2.29
+        G`Representatives := reps;
         for p in hecke_primes(n) do
-            Ap := AdjacencyMatrix(Genus(L0),p);
+            Ap := AdjacencyMatrix(G,p);
             fpf := Factorization(CharacteristicPolynomial(Ap));
-            hecke_mats[Sprint(p)] := Eltseq(Ap);
-            hecke_polys[Sprint(p)] := [<Coefficients(pair[1]), pair[2]> : pair in fpf];
+            hecke_mats[p] := Ap;
+            hecke_polys[p] := [(<Coefficients(pair[1]), pair[2]>) : pair in fpf];
         end for;
         advanced["adjacency_matrix"] := to_postgres(hecke_mats);
         advanced["adjacency_polynomials"] := to_postgres(hecke_polys);
@@ -90,12 +120,21 @@ procedure fill_genus(label)
         for col in ["rank", "signature", "det", "disc", "discriminant_group_invs", "is_even"] do
             lat[col] := basics[col];
         end for;
+        lat["genus_label"] := basics["label"];
         lat["class_number"] := advanced["class_number"];
-        D := Dual(L);
+        D := DualLat(L);
         lat["dual_det"] := Determinant(D);
+        // At the moment we do not know the label for the dual
+        lat["dual_label"] := "\\N";
+        // TODO := The code for ConwaySymbol is currently in sage. 
+        // The magma implemntation is in version 2.29 that has some bugs
+        // This is no longer part of the lattice, only of the genus
+        // lat["dual_conway"] := "\\N";
         gram := GramMatrix(L);
-        if (n eq s) then
+        if (n eq s) then 
+            // TODO : This is lossy - change later
             lat["gram"] := Eltseq(CanonicalForm(gram));
+            lat["canonical_gram"] := lat["gram"];
             A := AutomorphismGroup(L);
             lat["aut_size"] := #A;
             lat["festi_veniani_index"] := disc_aut_size div #A;
@@ -120,16 +159,13 @@ procedure fill_genus(label)
             lat["theta_series"] := Eltseq(ThetaSeries(L, prec - 1));
             lat["theta_prec"] := prec;
             lat["dual_theta_series"] := Eltseq(ThetaSeries(D, prec - 1));
-            pne := AssociativeArray();
-            for p->hmat in hecke_mats do
-                pne[p] := [i : i in [1..#reps] | hmat[(Li-1)*(#reps)+i] gt 0];
-            end for;
-            lat["pneighbors"] := pne; // adjusted below
             minima, vecs := SuccessiveMinima(L); // for now we just throw vecs away
             lat["successive_minima"] := minima;
         else
             lat["gram"] := Eltseq(gram);
-            // !!!  TODO - Need to be able to compute the automorphism group for non-definite lattices
+            // At the moment we do not have a notion of a canonical gram in the indefinite case
+            lat["canonical_gram"] := "\\N";
+            // !!!  TODO - Need to be able to compute some things for indefinite lattices
             lat["aut_size"] := "\\N";
             lat["festi_veniani_index"] := "\\N";
             lat["aut_label"] := "\\N";
@@ -144,7 +180,6 @@ procedure fill_genus(label)
             lat["theta_series"] := "\\N";
             lat["theta_prec"] := "\\N";
             lat["dual_theta_series"] := "\\N";
-            lat["pneighbors"] := "\\N";
             lat["successive_minima"] := "\\N";
         end if;
         lat["dual_label"] := "\\N"; // set in next stage
@@ -152,7 +187,7 @@ procedure fill_genus(label)
         lat["is_additively_indecomposable"] := "\\N"; // set in next stage
         lat["orthogonal_factors"] := "\\N"; // set in next stage
         lat["orthogonal_multiplicities"] := "\\N"; // set in next stage
-        lat["tensor_decomposition"] := "\\N"; // set in next stage
+        lat["tensor_decompositions"] := "\\N"; // set in next stage
         lat["is_tensor_product"] := "\\N"; // set in next stage
         lat["root_sublattice"] := "\\N"; // set in next stage
         lat["root_complement"] := "\\N"; // set in next stage
@@ -161,6 +196,8 @@ procedure fill_genus(label)
         lat["norm1_sublattice"] := "\\N"; // set in next stage
         lat["norm1_complement"] := "\\N"; // set in next stage
         lat["Zn_complement"] := "\\N"; // set in next stage
+        lat["name"] := "\\N"; // set in next stage
+        lat["successive_minima"] := "\\N"; // set in next stage
 
         lat["level"] := Level(LatticeWithGram(ChangeRing(GramMatrix(L), Integers()) : CheckPositive:=false));
 
@@ -197,27 +234,45 @@ procedure fill_genus(label)
     // 4. dual theta series
     // 5. arbitrary tiebreaker
     // TODO: Sort reps according to canonical form?
+    perm := [1..#lats];
     if (n eq s) then
-        lats := Sort(lats, cmp_lat);
+        Sort(~lats, cmp_lat, ~perm);
     end if;
 
     SetColumns(0);
     for idx->L in lats do
         // Need label for lattice.
-        lat := L;
-        lat["label"] := Sprintf("%o.%o", basics["label"], idx);
+        lats[idx]["label"] := Sprintf("%o.%o", basics["label"], idx);
     end for;
-    for lat in lats do
-        if lat["pneighors"] cmpne "\\N" then
-            lat["pneighbors"] := [lats[i]["label"] : i in lat["pneighbors"]];
+
+    for idx->L in lats do
+        lat := L;
+        if (n eq s) then
+            pNeighbors := AssociativeArray();
+            for p in hecke_primes(n) do
+                // !!! TODO - check that permutation is applied in the right direction
+                pNeighbors[p] := ["\"" * lats[j]["label"] * "\"" : j in [1..#lats] | hecke_mats[p][idx^perm,j^perm] ne 0];
+            end for;
+            lat["pneighbors"] := to_postgres(pNeighbors);
+        else
+            lat["pneighbors"] := "\\N";
         end if;
+        Remove(~lat, "theta_prec");
+        error if Keys(lat) ne Set(lat_format), [k : k in lat_format | k notin Keys(lat)], [k : k in Keys(lat) | k notin lat_format];
         output := Join([Sprintf("%o", to_postgres(lat[k])) : k in lat_format], "|");
         Write("lattice_data/" * lat["label"], output : Overwrite);
     end for;
-
+    error if Keys(basics) ne Set(basic_format), [k : k in basic_format | k notin Keys(basics)], [k : k in Keys(basics) | k notin basic_format];
+    error if Keys(advanced) ne Set(advanced_format), [k : k in advanced_format | k notin Keys(advanced)], [k : k in Keys(advanced) | k notin advanced_format];
     output := Join([basics[k] : k in basic_format] cat [Sprintf("%o", advanced[k]) : k in advanced_format], "|");
     Write("genera_advanced/" * label, output : Overwrite);
-
 end procedure;
 
-fill_genus(label);
+try
+    // fill_genus(label : genus_reps_func := neighbours);
+    fill_genus(label);
+catch e
+    E := Open("/dev/stderr", "a");
+    Write(E, Sprint(e) cat "\n");
+    Flush(E);
+end try;

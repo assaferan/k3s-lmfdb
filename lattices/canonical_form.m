@@ -1,6 +1,6 @@
 // freeze;
 
-declare verbose CanonicalForm, 4;
+declare verbose CanonicalForm, 5;
 
 function IsWellRounded(A)
     L := LatticeWithGram(A);
@@ -50,20 +50,15 @@ function V_ms(A : max_num := Infinity())
     VA := [];
     norms := IsEven(L) select [2..max_norm by 2] else [1..max_norm];
     for n in norms do
-	vprintf CanonicalForm, 5: "\n\t\t\t\t\t adding vectors of length %o...", n;
-        VA cat:= &cat[[v[1],-v[1]] :
-		      v in ShortVectors(L,n,n : Max := (max_num - #VA) div 2)];
-	if (#VA ge max_num) then
-	    return VA;
-	end if;
-	Lsub := sub<L | VA>;
+        vprintf CanonicalForm, 5: "\n\t\t\t\t\t adding vectors of length %o...", n;
+        VA cat:= &cat[[v[1],-v[1]] : v in ShortVectors(L,n,n : Max := (max_num - #VA) div 2)];
+        Lsub := sub<L | VA>;
         vprintf CanonicalForm, 5: "done! rank is %o.", Rank(Lsub);
         if Rank(Lsub) eq Rank(L) then
-	  vprintf CanonicalForm, 5: "quotient is %o.", L / Lsub;
-	end if;
-	if (Lsub eq L) then
-	    return VA;
-	end if;
+            vprintf CanonicalForm, 5: "quotient is %o.", L / Lsub;
+        end if;
+        if (Lsub eq L) then return VA; end if;
+        if (#VA ge max_num) then return []; end if;
     end for;
     Lsub := sub<L | VA>;
     assert Lsub eq L;
@@ -75,12 +70,12 @@ function V_cvp(A : max_num := Infinity())
     A := ChangeRing(A, Rationals());
     L := LatticeWithGram(A);
     minA := &cat[[v,-v] : v in ShortestVectors(L : Max := max_num div 2)];
-    if (#minA ge max_num) then
-       return minA;
-    end if;
     LminA := sub<L | minA>;
     if (LminA eq L) then
 	    return minA;
+    end if;
+    if (#minA ge max_num) then
+       return [];
     end if;
     L1 := satspan(Basis(LminA), A);
     assert LminA subset L1;
@@ -96,9 +91,13 @@ function V_cvp(A : max_num := Infinity())
 	    V_cvp_A2 := [];
     else
 	    V_cvp_A2 := V_cvp(A2 : max_num := max_num);
+        if IsEmpty(V_cvp_A2) then return []; end if;
     end if;
     A1_part := [Vector(Rationals(), v)*B1 : v in V_wr_cvp(A1)];
     proj_Z := ChangeRing(Denominator(proj)*proj, Integers());
+    assert sub<L | A1_part> eq L1;
+    // This is not true, need to figure out what the correct statement is
+    // assert RSpaceWithBasis(BasisMatrix(L1)) eq Kernel(proj_Z);
     B2_Z := ChangeRing(Denominator(proj)*B2, Integers());
     A2_part := [Solution(Transpose(proj_Z), Vector(v)*B2_Z) : v in V_cvp_A2];
     union_A2_part := &cat[[v - w : w in ClosestVectors(L1,v - v*proj)] : v in A2_part];
@@ -150,10 +149,12 @@ function V_best_with_dual(A)
             for jj->Vchar in [V_ms, V_cvp] do
                 vprintf CanonicalForm, 4: "\n\t\t\t trying the %o characteristic vector set...", jj eq 1 select "V_ms" else "V_cvp";
 		        VA := [Vector(v) : v in Vchar(B : max_num := max)];
-                Append(~VAs, <VA,B,is_dual[j], Td>);
-                if (#VA lt max) then
-		            found := true;
-                    max := #VA;
+                if not IsEmpty(VA) then
+                    Append(~VAs, <VA,B,is_dual[j], Td>);
+                    if (#VA lt max) then
+		                found := true;
+                        max := #VA;
+                    end if;
                 end if;
                 vprintf CanonicalForm, 4 : "Done!"; 
             end for;
