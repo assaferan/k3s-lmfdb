@@ -4,17 +4,6 @@ Q := Rationals();
 // A very quick lattice hash.  This is better with a faster
 // OrthogonalDecomposition (cf. my email)
 function root_sub(lat)
-  if IsOdd(lat) then
-    // !!! TODO : This is not the right thing to do.
-    // Temporary for the code to work.
-    even_vecs := [x : x in Basis(lat) | IsEven(Norm(x))];
-    odd_vecs := [x : x in Basis(lat) | IsOdd(Norm(x))];
-    even_vecs cat:= [x - y : x, y in odd_vecs];
-    // even_sub cat:= [Vector([Integers()!x : x in Eltseq(b)]) : b in Basis(Kernel(ChangeRing(GramMatrix(lat),GF(2))))];
-    even_lat := 2*lat + sub<lat | even_vecs>;
-    assert #(lat/even_lat) eq 2;
-    return root_sub(even_lat);
-  end if;
   rl := {*Strings()|*};
   tor := [];
   if Minimum(lat) eq 2 then
@@ -60,7 +49,7 @@ end function;
 // changes the basis and doesn't carry the automorphism group along, so these
 // last three are not very useful.
 
-function neighbours(pd:bd := Infinity(),thorough := true, avoid := {}, target := <{*"A999"*},[1001]>, lose_mass := 0, p := 2, show := false, done := {@@}, max_nonroot := Infinity(), silent := false, aut_gp_fn := AutomorphismGroup, isom_fn := IsIsomorphic, nb_fn := Neighbours)
+function neighbours(pd:bd := Infinity(),thorough := false, avoid := {}, target := <{*"A999"*},[1001]>, lose_mass := 0, p := 2, show := false, done := {@@}, max_nonroot := Infinity(), silent := false, aut_gp_fn := AutomorphismGroup, isom_fn := IsIsomorphic, nb_fn := Neighbours)
   _ := aut_gp_fn(pd);
   g := Genus(pd);
   mass := Mass(pd) - lose_mass;
@@ -101,5 +90,7 @@ function neighbours(pd:bd := Infinity(),thorough := true, avoid := {}, target :=
   if &+[1/#aut_gp_fn(i): i in done] eq mass then
     g`Representatives := Setseq(done);
   end if;
+  missing_mass := mass - &+[1/#aut_gp_fn(i): i in done];
+  if missing_mass gt 0 then "warning: finished exploring the graph but still missing", missing_mass, "of mass; consider rerunning with larger p"; end if;
   return done,rss,g;
 end function;

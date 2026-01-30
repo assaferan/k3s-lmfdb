@@ -23,14 +23,15 @@ function to_postgres(val : jsonb_val := false)
         return to_postgres(Eltseq(val) : jsonb_val:=jsonb_val);
     elif val cmpeq "\\N" then
         return val;
-    elif Type(val) eq MonStgElt then
-        return "\"" * val * "\""; // This will fail if the string has quotes, but I don't think that's ever true for us.
+    // I think this is unnecessary, and used to cause problems, so removing for now.
+    //elif Type(val) eq MonStgElt then
+    //    return "\"" * val * "\""; // This will fail if the string has quotes, but I don't think that's ever true for us.
     elif Type(val) in [SeqEnum, Tup] then
-        return delims[1] * Join([Sprintf("%o",to_postgres(x : jsonb_val)) : x in val],",") * delims[2];
+        return delims[1] * Join([Sprintf("%o",to_postgres(x : jsonb_val:=jsonb_val)) : x in val],",") * delims[2];
     elif Type(val) eq Assoc then
         val_prime := AssociativeArray();
         for key in Keys(val) do
-            val_prime[to_postgres(key)] := to_postgres(val[key] : jsonb_val);
+            val_prime[to_postgres(key)] := to_postgres(val[key] : jsonb_val:=true);
         end for;
         return dict_to_jsonb(val_prime);
     else
@@ -53,6 +54,12 @@ function RescaledDualNF(L)
     F div:= g;
     M := (d/g) * M;
     return NumberFieldLattice(Rows(ChangeRing(B, K)) : InnerProduct := ChangeRing(M,K));
+end function;
+
+function genus_reps(L)
+    if Type(L) eq LatNF then return GenusRepresentatives(L); end if;
+    if IsOdd(L) then return GenusRepresentatives(L); end if;
+    return Setseq(neighbours(L : thorough));
 end function;
 
 procedure fill_genus(label : genus_reps_func := GenusRepresentatives)
@@ -215,8 +222,8 @@ procedure fill_genus(label : genus_reps_func := GenusRepresentatives)
             d := L1["theta_series"][i] - L2["theta_series"][i];
             if (d ne 0) then return d; end if;
         end for;
-        for i in [1..L1["rank"]^2] do
-            d := Eltseq(L1["gram"])[i] - Eltseq(L2["gram"])[i];
+        for i in [1..n^2] do
+            d := L1["gram"][i] - L2["gram"][i];
             if (d ne 0) then return d; end if;
         end for;
         return 0;
@@ -269,7 +276,7 @@ procedure fill_genus(label : genus_reps_func := GenusRepresentatives)
 end procedure;
 
 try
-    // fill_genus(label : genus_reps_func := neighbours);
+    // fill_genus(label : genus_reps_func := genus_reps);
     fill_genus(label);
 catch e
     E := Open("/dev/stderr", "a");
