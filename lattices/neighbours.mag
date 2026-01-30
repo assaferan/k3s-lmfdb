@@ -86,5 +86,7 @@ function neighbours(pd:bd := Infinity(),thorough := false, avoid := {}, target :
   if &+[1/#aut_gp_fn(i): i in done] eq mass then
     g`Representatives := Setseq(done);
   end if;
+  missing_mass := mass - &+[1/#aut_gp_fn(i): i in done];
+  if missing_mass gt 0 then "warning: finished exploring the graph but still missing", missing_mass, "of mass; consider rerunning with larger p"; end if;
   return done,rss,g;
 end function;
