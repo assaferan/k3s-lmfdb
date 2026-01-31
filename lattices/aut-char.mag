@@ -205,6 +205,13 @@ function aut_char_simple(lat,d)
   gm_sub := Matrix(d,d,[gm[i,j]: i,j in [1..d]]);
   sublat := LatticeWithGram(gm_sub);
   aut_sub := AutomorphismGroup(sublat);
+  p := 10;
+  repeat
+    p := NextPrime(p);
+    asp := ChangeRing(aut_sub,GF(p));
+  until #aut_sub eq #asp;
+  to_asp := hom<aut_sub->asp|[aut_sub.i: i in [1..Ngens(aut_sub)]]>;
+  
   ker := lift(lat,Identity(aut_sub));
   lift_gens := [lift(lat,aut_sub.i:only_one): i in [1..Ngens(aut_sub)]];
   if forall{x: x in lift_gens|#x gt 0} then
@@ -222,7 +229,8 @@ function aut_char_simple(lat,d)
     repeat
       lift_sub := sub<aut_sub|Keys(can_lift)>;
       pow +:= 1;
-      new_gps := [x`subgroup: x in Subgroups(aut_sub: IndexLimit := 2^pow)|Index(aut_sub,x`subgroup) gt 2^(pow-1)];
+      // unfortunately the composition tree doesn't seem to help with this
+      new_gps := [x`subgroup@@to_asp: x in Subgroups(asp: IndexLimit := 2^pow)|Index(asp,x`subgroup) gt 2^(pow-1)];
       new_gps := [x: x in new_gps|IsConjugateSubgroup(aut_sub,x,lift_sub)];
 
       for g in new_gps do
