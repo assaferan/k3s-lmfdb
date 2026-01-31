@@ -259,6 +259,82 @@ function aut_char_simple(lat,d)
   end if;
 end function;
 
+// other variation, better when the index of the liftable subgroup is large
+// and the codimension of the characteristic sublattice is small
+// we try to build up the group from the bottom by lifting random elements
+// until they generate a subgroup close enough to the subgroup that can
+// be lifted, then search over coset representatives to get it exactly right
+// caution: if the index of the subgroup of Aut(char. sublat.) that can be
+// lifted to the full lattice is greater than max_ind, this will run forever
+function aut_max_ind(lat,d: max_ind := 100)
+  if d eq Rank(lat) then return AutomorphismGroup(lat); end if;
+  gm := GramMatrix(lat);
+  gm_sub := Matrix(d,d,[gm[i,j]: i,j in [1..d]]);
+  sublat := LatticeWithGram(gm_sub);
+  aut_sub := AutomorphismGroup(sublat);
+
+  ker := lift(lat,Identity(aut_sub));
+  lift_sub := sub<aut_sub|>;
+  lifts := ker;
+  cant_lift := {@@};
+  repeat
+    printf ".";
+    l := Random(aut_sub);
+    if l in lift_sub then continue; end if;
+    lg := lift(lat,l:only_one);
+    if #lg gt 0 then
+      Append(~lifts,lg[1]);
+      lift_sub := sub<aut_sub|lift_sub,l>;
+      printf " %o ", Index(aut_sub,lift_sub);
+    else
+      Include(~cant_lift,l);
+    end if;
+  until Index(aut_sub,lift_sub) le max_ind;
+  printf "\n";
+  
+  tr := {@x: x in Transversal(aut_sub,lift_sub)|x ne Identity(aut_sub)@};
+
+  // the time for these two approaches is about the same
+  // the goal is to make a list of pairs [x,y] such that a subgroup
+  // containing x must contain y as well, so if y doesn't lift neither does x.
+
+  /*aa := AssociativeArray();
+  for i in [1..#tr] do
+    gi := sub<aut_sub|lift_sub,tr[i]>;
+    if gi in Keys(aa) then Append(~aa[gi],i); else aa[gi] := [i]; end if;
+  end for;
+  pairs := {@[tr[j],tr[i]]: i in [1..#tr], j in aa[gi], gi in Keys(aa)|tr[i] in gi@};*/
+
+  pairs := {@@};
+  for i in [1..#tr] do
+    gi := sub<aut_sub|lift_sub,tr[i]>;
+    pairs join:= {@[tr[i],tr[j]]: j in [1..#tr]|tr[j] in gi@};
+  end for;
+  
+  while #tr gt 0 do
+    v := tr[1];
+    tr := tr[2..#tr];
+    new_sub := sub<aut_sub|lift_sub,v>;
+    if forall{i: i in cant_lift|i notin new_sub} then
+      lv := lift(lat,v:only_one);
+      if #lv gt 0 then
+        Append(~lifts,lv[1]);
+        lift_sub := new_sub;
+        tr := {@x: x in tr|x notin new_sub@};
+      else
+        tr := {@x: x in tr|[x,v] notin pairs@};
+      end if;
+    else
+      tr := {@x: x in tr|[x,v] notin pairs@};
+      Include(~cant_lift,v);
+    end if;
+    printf "%o ", #tr;
+  end while;
+  aut_lat := MatrixGroup<Rank(lat),Z|lifts>;
+  assert #aut_lat eq #lift_sub*#ker;
+  return aut_lat;
+end function;
+  
 /* unused code:
       for p in CartesianProduct([Set(i): i in short
     if exists(pol2){x: x in DefiningPolynomials(p)|Degree(x) eq 2 and forall{i: i in [1..(dim-1)*nr]|Degree(x,i) eq 0}} then
