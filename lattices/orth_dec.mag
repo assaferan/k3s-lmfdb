@@ -1,0 +1,57 @@
+// let's try to implement the same idea in Magma
+// for some reason Magma's OrthogonalComplement only works for LatNF, not Lat
+function orth_comp(rs,sub)
+  Zk := RSpace(Z,Dimension(sub));
+  tok := hom<rs->Zk|[[(x,y): y in Basis(sub)]: x in Basis(rs)]>;
+  ker := Kernel(tok);
+  // we already have the inclusion map
+  return ker,RSpace(Z,Dimension(ker),GramMatrix(ker));
+end function;
+
+lat := LatticeWithGram(SymmetricMatrix([6,-9,16,-3,7,18,1,-2,-8,8,0,0,-7,4,4,1,-1,0,-2,0,2,-1,2,1,0,0,0,2]));
+function orth_dec(lat)
+  mat := GramMatrix(lat);
+  dim := Rank(lat);
+  lll,tolll := LLLGram(mat);
+  lat_lll := LatticeWithGram(lll);
+  bd := Max(Diagonal(lll));
+  components := [];
+  rs := RSpace(Z,dim,lll);
+
+  sub_rs := sub<rs|>;
+
+  for l in [1..bd] do
+    sv := [rs|x[1]: x in ShortVectors(lat_lll,l,l)];
+    for v in sv do
+      if v notin sub_rs then
+        nonorth_comps := [x: x in components|exists{i: i in Basis(x)|(rs!v,i) ne 0}];
+        new_comp := sub<rs|nonorth_comps,v>;
+        new_orth := orth_comp(rs,new_comp);
+        // why doesn't Saturation give you a subspace of the same space?
+        sat_comp := sub<rs|Basis(Saturation(new_comp))>;
+        if sat_comp eq rs then return [rs]; end if; // done
+        if sub<rs|new_orth,sat_comp> eq rs then
+          // we have found a component; recursively find the rest
+          orth_lat := LatticeWithGram(GramMatrix(new_orth));
+          orth_rs := RSpace(Z,Rank(new_orth),GramMatrix(new_orth));
+          orth_comps := orth_dec(orth_lat);
+          orth_comps_lll := Append([sub<lat_lll|[&+[v[i]*Basis(new_orth)[i]: i in [1..Dimension(orth_lat)]]: v in Basis(c)]>: c in orth_comps],sub<lat_lll|Basis(sat_comp)>);
+          orth_comps_lat := [sub<lat|[lat|Vector(v)*tolll: v in Basis(c)]>: c in orth_comps_lll];
+          assert forall{x: x,y in orth_comps_lat|x eq y or forall{a: a in Basis(x), b in Basis(y)|(a,b) eq 0}};
+          assert sub<lat|orth_comps_lat> eq lat;
+          return orth_comps_lll;
+        else
+          components := Append([PowerStructure(ModTupRng)|x: x in components|x notin nonorth_comps],sat_comp);
+          sub_rs := sub<rs|Basis(Saturation(sub<rs|sub_rs,v>))>;
+          if sub_rs eq rs then
+            orig_cps := [sub<lat|[v*Transpose(lll): v in Basis(r)]>: r in components];
+            grams := [GramMatrix(i): i in orig_cps];
+            return orig_cps, grams;
+          end if;
+        end if;
+      end if;
+    end for;
+  end for;
+
+  error "shouldn't be here";
+end function;
