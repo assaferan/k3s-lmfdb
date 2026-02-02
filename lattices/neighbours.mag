@@ -6,23 +6,21 @@ Q := Rationals();
 function root_sub(lat)
   rl := {*Strings()|*};
   tor := [];
-  if Minimum(lat) eq 2 then
-    sl := sub<lat|ShortestVectors(lat)>;
-    Zn := RSpace(Z,Dimension(lat));
-    slzn := sub<Zn|[Eltseq(i): i in ShortestVectors(lat)]>;
-    tor := Moduli(Saturation(slzn)/slzn);
-    od := OrthogonalDecomposition(sl);
-    for i in od do
-      sdi := IntegerToString(Dimension(i));
-      for l in ["A","D","E"] do
-        if IsIsomorphic(i,LatticeWithGram(CartanMatrix(l*sdi))) then
-          Include(~rl,l*sdi);
-          continue i;
-        end if;
-      end for;
-      error "impossible root lattice", Eltseq(GramMatrix(lat));
+  sl := sub<lat|[x[1]: x in ShortVectors(lat,2,2)]>;
+  Zn := RSpace(Z,Dimension(lat));
+  slzn := sub<Zn|[Eltseq(i): i in ShortestVectors(lat)]>;
+  tor := Moduli(Saturation(slzn)/slzn);
+  od := OrthogonalDecomposition(sl);
+  for i in od do
+    sdi := IntegerToString(Dimension(i));
+    for l in ["A","D","E"] do
+      if IsIsomorphic(i,LatticeWithGram(CartanMatrix(l*sdi))) then
+        Include(~rl,l*sdi);
+        continue i;
+      end if;
     end for;
-  end if;
+    error "impossible root lattice", Eltseq(GramMatrix(lat));
+  end for;
   return rl,tor,#ShortVectors(lat,4,4);
 end function;
 
@@ -53,7 +51,7 @@ function neighbours(pd:bd := Infinity(),thorough := false, avoid := {}, target :
   _ := aut_gp_fn(pd);
   g := Genus(pd);
   mass := Mass(pd) - lose_mass;
-  todo := {@pd@}; rss := [* *];
+  todo := {@pd@}; rss := [];
   cp := Cputime();
   ct := 0;
   while #todo gt 0 and #done lt bd and &+[Q|1/#aut_gp_fn(i): i in done] lt mass do
@@ -69,6 +67,9 @@ function neighbours(pd:bd := Infinity(),thorough := false, avoid := {}, target :
     // if forall{r: r in done|(<a,b,c> ne <d,e,f> where a,b,c is root_sub(todo[ind]) where d,e,f is root_sub(r)) or (thorough and not isom_fn(todo[ind],r))} then
     if forall{r: r in [1..#done]|(<a,b,c> ne rss[r] where a,b,c is root_sub(todo[ind])) or (thorough and not isom_fn(todo[ind],done[r]))} then
       nlat := [LatticeWithGram(GramMatrix(n)): n in nb_fn(todo[ind],p)];
+      if IsEven(pd) then assert forall{l: l in nlat|IsEven(l)};
+      else nlat := [x: x in nlat|not IsEven(x)];
+      end if;
       if <a,b,c> notin avoid where a,b,c is root_sub(todo[ind]) then
 	Include(~done,todo[ind]);
 	if show then Eltseq(GramMatrix(todo[ind])); end if;
