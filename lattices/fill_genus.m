@@ -1,3 +1,5 @@
+declare verbose FillGenus, 1;
+
 import "neighbours.mag" : neighbours;
 
 function hecke_primes(rank)
@@ -92,7 +94,9 @@ intrinsic FillGenus(label::MonStgElt : genus_reps_func := GenusRepresentatives)
     gram0 := Matrix(K, n, eval rep);
     L0 := LWG(gram0);
     // reps := GenusRepresentatives(L0);
-    reps := genus_reps_func(L0);
+    vprintf FillGenus, 1 : "Computing genus representatives...";
+    vtime FillGenus, 1 : reps := genus_reps_func(L0);
+    vprintf FillGenus, 1 : "Done!\n";
     advanced["class_number"] := #reps;
     if n eq s then
         hecke_mats := AssociativeArray();
@@ -101,12 +105,15 @@ intrinsic FillGenus(label::MonStgElt : genus_reps_func := GenusRepresentatives)
         G := Genus(L0);
         // This works for 2.28 - should be replaced by SetGenus in 2.29
         G`Representatives := reps;
+        vprintf FillGenus, 1 : "Computing adjacency matrix for p = ";
         for p in hecke_primes(n) do
-            Ap := AdjacencyMatrix(G,p);
+            vprintf FillGenus, 1 : "%o:", p;
+            vtime FillGenus, 1 : Ap := AdjacencyMatrix(G,p);
             fpf := Factorization(CharacteristicPolynomial(Ap));
             hecke_mats[p] := Ap;
             hecke_polys[p] := [(<Coefficients(pair[1]), pair[2]>) : pair in fpf];
         end for;
+        vprintf FillGenus, 1 : "Done!\n";
         advanced["adjacency_matrix"] := to_postgres(hecke_mats);
         advanced["adjacency_polynomials"] := to_postgres(hecke_polys);
     else
@@ -117,6 +124,10 @@ intrinsic FillGenus(label::MonStgElt : genus_reps_func := GenusRepresentatives)
     disc_invs := "[" * disc_invs[2..#disc_invs-1] * "]"; // Switch to square brackets
     disc_invs := eval disc_invs;
     disc_aut_size := #AutomorphismGroup(AbelianGroup(disc_invs)); 
+
+    if (n eq s) then
+        vprintf FillGenus, 1 : "Computing canonical forms and automorphism groups for representative ";
+    end if;
 
     for Li->L in reps do
         lat := AssociativeArray();
@@ -136,9 +147,10 @@ intrinsic FillGenus(label::MonStgElt : genus_reps_func := GenusRepresentatives)
         gram := GramMatrix(L);
         if (n eq s) then 
             // TODO : This is lossy - change later
-            lat["gram"] := Eltseq(CanonicalForm(gram));
+            vprintf FillGenus, 1 : "%o", gram;
+            vtime FillGenus, 1 : lat["gram"] := Eltseq(CanonicalForm(gram));
             lat["canonical_gram"] := lat["gram"];
-            A := AutomorphismGroup(L);
+            vtime FillGenus, 1 : A := AutomorphismGroup(L);
             lat["aut_size"] := #A;
             lat["festi_veniani_index"] := disc_aut_size div #A;
             if CanIdentifyGroup(#A) then
@@ -209,6 +221,8 @@ intrinsic FillGenus(label::MonStgElt : genus_reps_func := GenusRepresentatives)
         lat["conway_symbol"] := basics["conway_symbol"];
         Append(~lats, lat);
     end for;
+
+    vprintf FillGenus, 1 : "Done!\n";
 
     function cmp_lat(L1, L2)
         d := L2["aut_size"] - L1["aut_size"];

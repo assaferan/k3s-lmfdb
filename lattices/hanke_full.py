@@ -28,13 +28,16 @@ def find_min_x(num, rem):
 def algo3_8(L, a=2):
     saturated = False
     while not saturated:
-        l = a
+        # l = a
+        l = 1
         LGenus = L.genus()
         saturated = True
         for symbol in LGenus.local_symbols():
             p = symbol.prime()
-            l *= p ** ((symbol._symbol[-1][0] - ZZ(a).valuation(p) + 1) // 2)
-            if (symbol._symbol[-1][0] - ZZ(a).valuation(p) > 1):
+            # l *= p ** ((symbol._symbol[-1][0] - ZZ(a).valuation(p) + 1) // 2)
+            l *= p ** ((symbol._symbol[-1][0] + 1) // 2)
+            # if (symbol._symbol[-1][0] - ZZ(a).valuation(p) > 1):
+            if (symbol._symbol[-1][0] > 1):
                 saturated = False
         L = L.overlattice((l * L.dual_lattice()).basis())
     return L
@@ -263,17 +266,17 @@ def L_perp_mod2_basis(G, w):
     for i in range(n):
         if a[i] == 0:
             zero = [0] * n
-            zero[i] = 2
+            zero[i] = 1
             vecs.append(zero)
         else:
             bad.append(i)
     curr = [0] * n
     for i in range(len(bad)):
-        curr[bad[i]] = 2
+        curr[bad[i]] = 1
         if i%2 == 0:
-            curr[bad[0]] = 4
+            curr[bad[0]] = 2
         vecs.append(curr.copy())
-        curr[bad[0]] = 2
+        curr[bad[0]] = 1
 
     return vecs
 
@@ -297,8 +300,13 @@ def p_neighbor_lattice(L_in, w, p=2):
     perp_basis = L_perp_mod2_basis(G, w)    
 
     gens = [vector(QQ, w) / p] + [vector(QQ, v) for v in perp_basis]
-    B = Z_span_basis(gens)
-    Gprime = B.transpose() * G * B
+    # B = Z_span_basis(gens)
+    mat = Matrix(gens)
+    int_mat = mat.denominator() * mat
+    int_mat = int_mat.change_ring(ZZ)
+    hnf_int = int_mat.hermite_form(include_zero_rows=False)
+    B = hnf_int / mat.denominator()
+    Gprime = B * G * B.transpose()
 
     return IntegralLattice(Gprime)
 
@@ -325,8 +333,10 @@ def even_sublattice(L):
         v[pivot[0]] = 3 - v[pivot[0]]
         basis.append(v.copy())
     B = Matrix(ZZ, basis)
+    B = B * L.basis_matrix()
     # print(B)
-    return [IntegralLattice(B * L.gram_matrix() * B.transpose()), B]
+    #return [IntegralLattice(B * L.gram_matrix() * B.transpose()), B]
+    return L.sublattice(B)
 
 # ------------------------
 # Integer kernel basis for B v == 0 (mod 2), and finishing logic
@@ -353,7 +363,8 @@ def integer_basis(B):
 def fnd(L):
     B = L.basis_matrix()
     G = L.gram_matrix()
-    zbasis = integer_basis((B*G)%2)
+    # zbasis = integer_basis((B*G)%2)
+    # zbasis = integer_basis(G%2)
     for v in list(itertools.product(range(8), repeat=min(len(G.rows()),5))):
         prim = False
         vv = []
@@ -361,17 +372,20 @@ def fnd(L):
             vv.append(Integer(v[i]))
         while len(vv) < len(G.rows()):
             vv.append(0)
-        res = [0]*len(G.rows())
-        res = vector(res)
-        for i in range(len(G.rows())):
-            res += vector(zbasis[i] * vv[i])
-        for val in res:
+        vv = vector(ZZ, vv)
+        # print("vv", vv)
+        #res = [0]*len(G.rows())
+        #res = vector(res)
+        #for i in range(len(G.rows())):
+            # res += vector(zbasis[i] * vv[i])
+        #    res += vector(vv[i])
+        for val in vv:#res:
             if val%2==1:
                 prim=True
         if prim==False:
             continue
-        if (res*G * res.column())[0] % 8==0:
-            return res
+        if (vv*G * vv.column())[0] % 8==0:
+            return vv # * L.basis_matrix()
     
     return -1
 
@@ -381,6 +395,7 @@ def finish(L):
     print(evenL)
     if L==evenL:
         return L
+    assert (L / evenL).cardinality() == 2
     v = fnd(L)
     if v == -1:
         return evenL
@@ -457,7 +472,7 @@ def maximal_overlattice_2(L_in, do_asserts=True):
                 v_dual = vector(QQ, vZ) * Minv            # in L*
                 q = (v_dual * M * v_dual.column())[0]
                 if q in ZZ:
-                    to_adjoin.append(v_dual)
+                    to_adjoin.append(v_dual*L_sat.basis_matrix())
         else:
             iso_basis = max_isotrop_fp(Mp_dual, verbose=False)  # list of row vectors over F_p
             Fp = GF(p)
@@ -466,7 +481,7 @@ def maximal_overlattice_2(L_in, do_asserts=True):
                 v_dual = vector(QQ, vZ) * Minv            # in L*
                 q = (v_dual * M * v_dual.column())[0]
                 if q in ZZ:
-                    to_adjoin.append(v_dual)
+                    to_adjoin.append(v_dual*L_sat.basis_matrix())
 
     if to_adjoin:
         L_sat = L_sat.overlattice(list(L_sat.basis()) + to_adjoin)
@@ -482,10 +497,10 @@ def maximal_overlattice_2(L_in, do_asserts=True):
 
     return L_sat
 
-L = IntegralLattice(Matrix(QQ, [[4,0,0,0,0], [0,4,0,0,0], [0,0,8,0,0], [0,0,0,4,0], [0,0,0,0,8]]))
-L_max = maximal_overlattice_2(L)
-print(L_max)
-print(L_max.gram_matrix())
+#L = IntegralLattice(Matrix(QQ, [[4,0,0,0,0], [0,4,0,0,0], [0,0,8,0,0], [0,0,0,4,0], [0,0,0,0,8]]))
+#L_max = maximal_overlattice_2(L)
+#print(L_max)
+#print(L_max.gram_matrix())
 
 """
 [1/2   0   0 1/2   0]

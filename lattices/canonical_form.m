@@ -69,7 +69,11 @@ end function;
 function V_cvp(A : max_num := Infinity())
     A := ChangeRing(A, Rationals());
     L := LatticeWithGram(A);
-    minA := &cat[[v,-v] : v in ShortestVectors(L : Max := max_num div 2)];
+    if Type(max_num) eq RngIntElt then
+        minA := &cat[[v,-v] : v in ShortestVectors(L : Max := max_num div 2)];
+    else
+        minA := &cat[[v,-v] : v in ShortestVectors(L)];
+    end if;
     LminA := sub<L | minA>;
     if (LminA eq L) then
 	    return minA;
@@ -100,7 +104,8 @@ function V_cvp(A : max_num := Infinity())
     // assert RSpaceWithBasis(BasisMatrix(L1)) eq Kernel(proj_Z);
     B2_Z := ChangeRing(Denominator(proj)*B2, Integers());
     A2_part := [Solution(Transpose(proj_Z), Vector(v)*B2_Z) : v in V_cvp_A2];
-    union_A2_part := &cat[[v - w : w in ClosestVectors(L1,v - v*proj)] : v in A2_part];
+    // union_A2_part := &cat[[v - w : w in ClosestVectors(L1,v - v*proj)] : v in A2_part];
+    union_A2_part :=  &cat[[v - w : w in ClosestVectors(L1,v - v*Transpose(proj))] : v in A2_part];
     VA := A1_part cat union_A2_part;
     VA := [v : v in VA | v ne 0];
     Lsub :=  sub<L | VA>;
@@ -320,16 +325,16 @@ end intrinsic;
 
 // checks that V transforms well under linear transformations
 procedure test_V(A : Vchar := V_cvp)
-    A := ChangeRing(A, Integers());
+    A := ChangeRing(A, Rationals());
     T := RandomGLnZ(Nrows(A),33,17);
+    T := ChangeRing(T, Rationals());
     TA := T*A*Transpose(T);
     A := GramMatrix(LLL(LatticeWithGram(A)));
     TA := GramMatrix(LLL(LatticeWithGram(TA)));
-    _, T := IsIsometric(LatticeWithGram(A), LatticeWithGram(TA));
-    assert TA eq T*A*Transpose(T);
-    A := ChangeRing(A, Rationals());
+    dA := Denominator(A);
+    _, T := IsIsometric(LatticeWithGram(dA*A), LatticeWithGram(dA*TA));
     T := ChangeRing(T, Rationals());
-    TA := ChangeRing(TA, Rationals());
+    assert TA eq T*A*Transpose(T);
     VA := Vchar(A);
     VTA := Vchar(TA);
     VA := [ChangeRing(v,Rationals()) : v in VA];
@@ -361,7 +366,7 @@ end procedure;
 
 
 // check that Stab(A) maps into Stab(G_A)
-// Cannnot establish surjectivity yet.
+// Cannot establish surjectivity yet.
 procedure test_W(A)
     A := ChangeRing(A, Integers());
     A := GramMatrix(LLL(LatticeWithGram(A)));
