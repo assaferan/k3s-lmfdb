@@ -1,3 +1,6 @@
 [submodule "lattices/FiniteGroups"]
 	path = lattices/FiniteGroups
 	url = https://github.com/roed314/FiniteGroups.git
+[submodule "Parallel.magma"]
+	path = Parallel.magma
+	url = git@github.com:edgarcosta/Parallel.magma.git

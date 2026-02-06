@@ -59,7 +59,7 @@ function genus_reps(L)
     return Setseq(neighbours(L : thorough));
 end function;
 
-intrinsic FillGenus(label::MonStgElt : genus_reps_func := GenusRepresentatives)
+intrinsic FillGenus(label::MonStgElt : genus_reps_func := GenusRepresentatives, timeout := 1800)
 {Fill the data for a genus and its lattice representatives, given files in the genera_basic format.}
     data := Split(Split(Read("genera_basic/" * label), "\n")[1], "|");
     basic_format := Split(Read("genera_basic.format"), "|");
@@ -144,24 +144,43 @@ intrinsic FillGenus(label::MonStgElt : genus_reps_func := GenusRepresentatives)
         // The magma implemntation is in version 2.29 that has some bugs
         // This is no longer part of the lattice, only of the genus
         // lat["dual_conway"] := "\\N";
+        lat["gram"] := "\\N";  
+        lat["canonical_gram"] := "\\N";
+        lat["aut_size"] := "\\N";
+        lat["festi_veniani_index"] := "\\N";
+        lat["aut_label"] := "\\N";
+        lat["aut_group"] := "\\N";
+        lat["density"] := "\\N";
+        lat["dual_density"] := "\\N";
+        lat["hermite"] := "\\N";
+        lat["dual_hermite"] := "\\N";
+        lat["kissing"] := "\\N";
+        lat["dual_kissing"] := "\\N";
+        lat["minimum"] := "\\N";
+        lat["theta_series"] := "\\N";
+        lat["theta_prec"] := "\\N";
+        lat["dual_theta_series"] := "\\N";
+        lat["successive_minima"] := "\\N";
         gram := GramMatrix(L);
         if (n eq s) then 
             // TODO : This is lossy - change later
             vprintf FillGenus, 1 : "%o", gram;
-            vtime FillGenus, 1 : lat["gram"] := Eltseq(CanonicalForm(gram));
-            lat["canonical_gram"] := lat["gram"];
-            vtime FillGenus, 1 : A := AutomorphismGroup(L);
-            lat["aut_size"] := #A;
-            lat["festi_veniani_index"] := #A div disc_aut_size;
-            if CanIdentifyGroup(#A) then
-                Aid := IdentifyGroup(A);
-                lat["aut_label"] := Sprintf("%o.%o", Aid[1], Aid[2]);
-            else
-                lat["aut_label"] := "\\N";
+            success, canonical_gram, elapsed := TimeoutCall(timeout, CanonicalForm, <gram>, 1);
+            vprintf FillGenus, 1 : "Canonical form computed in %o seconds\n", elapsed;
+            if success then 
+                lat["canonical_gram"] := Eltseq(canonical_gram);
             end if;
-            // This one needs David's code
-            lat["aut_group"] := GroupToString(A : use_id:=false);
-            // lat["aut_group"] := "\\N";
+            success, aut_group, elapsed := TimeoutCall(timeout, AutomorphismGroup, <L>, 1);
+            vprintf FillGenus, 1 : "Automorphism group computed in %o seconds\n", elapsed;
+            if success then 
+                lat["aut_group"] := GroupToString(aut_group : use_id:=false);
+                lat["aut_size"] := #aut_group;
+                lat["festi_veniani_index"] := #aut_group div disc_aut_size;
+                if CanIdentifyGroup(#aut_group) then
+                    Aid := IdentifyGroup(aut_group);
+                    lat["aut_label"] := Sprintf("%o.%o", Aid[1], Aid[2]);
+                end if;
+            end if;
             lat["density"] := Density(L);
             lat["dual_density"] := Density(D);
             lat["hermite"] := HermiteNumber(L);
@@ -177,25 +196,9 @@ intrinsic FillGenus(label::MonStgElt : genus_reps_func := GenusRepresentatives)
             minima, vecs := SuccessiveMinima(L); // for now we just throw vecs away
             lat["successive_minima"] := minima;
         else
-            lat["gram"] := Eltseq(gram);
+            lat["gram"] := [Eltseq(gram)];
             // At the moment we do not have a notion of a canonical gram in the indefinite case
-            lat["canonical_gram"] := "\\N";
             // !!!  TODO - Need to be able to compute some things for indefinite lattices
-            lat["aut_size"] := "\\N";
-            lat["festi_veniani_index"] := "\\N";
-            lat["aut_label"] := "\\N";
-            lat["aut_group"] := "\\N";
-            lat["density"] := "\\N";
-            lat["dual_density"] := "\\N";
-            lat["hermite"] := "\\N";
-            lat["dual_hermite"] := "\\N";
-            lat["kissing"] := "\\N";
-            lat["dual_kissing"] := "\\N";
-            lat["minimum"] := "\\N";
-            lat["theta_series"] := "\\N";
-            lat["theta_prec"] := "\\N";
-            lat["dual_theta_series"] := "\\N";
-            lat["successive_minima"] := "\\N";
         end if;
         lat["dual_label"] := "\\N"; // set in next stage
         lat["is_indecomposable"] := "\\N"; // set in next stage
@@ -212,13 +215,13 @@ intrinsic FillGenus(label::MonStgElt : genus_reps_func := GenusRepresentatives)
         lat["norm1_complement"] := "\\N"; // set in next stage
         lat["Zn_complement"] := "\\N"; // set in next stage
         lat["name"] := "\\N"; // set in next stage
-        lat["successive_minima"] := "\\N"; // set in next stage
 
         lat["level"] := Level(LatticeWithGram(ChangeRing(GramMatrix(L), Integers()) : CheckPositive:=false));
 
         // TODO - do we also need these? or should we only keep them for the genus?
         lat["genus_label"] := basics["label"];
         lat["conway_symbol"] := basics["conway_symbol"];
+        lat["dual_conway_symbol"] := basics["dual_conway_symbol"];
         Append(~lats, lat);
     end for;
 

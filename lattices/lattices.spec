@@ -6,4 +6,9 @@
     {
         +spec
     }
+
+    Parallel.magma
+    {
+        +spec
+    }
 }
