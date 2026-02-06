@@ -41,19 +41,22 @@ end function;
 // the p-neighbours of a lattice, and a canonical form
 // thorough included for backward compatibility
 
-// bd := Infinity(); p := 2; done := {@@}; silent := false; aut_gp_fn := AutomorphismGroup; nb_fn := Neighbours; cf_fn := func<x|CanonicalForm(GramMatrix(x))>; hash := func<x|<a,b,c> where a,b,c is root_sub(x)>;
+// bd := Infinity(); p := 2; done := {@@}; silent := false; aut_gp_fn := aut_faster; nb_fn := newNeighbours; cf_fn := func<x|CanonicalForm(GramMatrix(x))>; hash := func<x|<IsEven(x) select "even" else "odd",a,b,c,d> where a,b,c is root_sub(x) where d is [Rank(stoi(x,i)): i in [1..6]]>;
 stoi := func<l,i|sub<l|[x[1]: x in ShortVectors(l,i)]>>;
-function list_genus(pd: bd := Infinity(), p := 2, done := {@@}, silent := false, aut_gp_fn := AutomorphismGroup, nb_fn := Neighbours, cf_fn := func<x|CanonicalForm(GramMatrix(x))>, hash := func<x|<a,b,c,d> where a,b,c is root_sub(x) where d is [Rank(stoi(x,i)): i in [1..6]]>, thorough := true)
+easy_hash := func<x|<IsEven(x) select "even" else "odd",a,b,c,d> where a,b,c is root_sub(x) where d is [Rank(stoi(x,i)): i in [1..6]]>;
+// further improvement: only compute canonical form when we need it,
+// unless find_canonical is set to true
+function list_genus(pd: bd := Infinity(), p := 2, done := {@@}, silent := false, aut_gp_fn := AutomorphismGroup, nb_fn := Neighbours, cf_fn := func<x|CanonicalForm(GramMatrix(x))>, hash := easy_hash, thorough := true, find_canonical := false)
   _ := aut_gp_fn(pd);
   g := Genus(pd);
   mass := Mass(pd);
   todo := {@pd@}; rss := [];
   cp := Cputime(); ct := 0;
-  can_forms := {@@};
   mass_left := mass;
   hashes := [hash(pd)];
-  found_hashes := {@@};
-  
+  found_hashes := [];
+  cf := cf_fn(pd); // placeholder
+  can_forms := []; // I don't think we spend much time comparing them
   while #todo gt 0 and #done lt bd and mass_left gt 0 do
     good_inds := [x: x in [1..#todo]|hashes[x] notin found_hashes];
     ct +:= 1;
@@ -65,20 +68,39 @@ function list_genus(pd: bd := Infinity(), p := 2, done := {@@}, silent := false,
     end if;
     ind := (#good_inds gt 0 select Random(good_inds) else Random(1,#todo));
     l := todo[ind];
-    cf := cf_fn(l);
+    if find_canonical or #good_inds eq 0 then cf := cf_fn(l); end if; 
     assert #good_inds eq 0 or cf notin can_forms;
     todo := {@todo[i]: i in Remove([1..#todo],ind)@};
     the_hash := hashes[ind];
     Remove(~hashes,ind);
-    if cf notin can_forms then
+    new_hash := the_hash notin found_hashes;
+    if new_hash then
+      is_new := true;
+    else
+      if not find_canonical then // we have to after all
+        cf := cf_fn(l);
+        is_new := true;
+        for i in [1..#found_hashes] do
+          if found_hashes[i] eq the_hash then
+            if not IsDefined(can_forms,i) then can_forms[i] := cf_fn(done[i]); end if;
+            if can_forms[i] eq cf then is_new := false; break i; end if;
+          end if;
+        end for;
+      end if;
+    end if;
+    if is_new then
       Include(~done,l);
-      Include(~can_forms,cf);
-      Include(~found_hashes,the_hash);
+      if find_canonical or not new_hash then
+        can_forms[#done] := cf;
+      end if;
+      Append(~found_hashes,the_hash);
       ag := aut_gp_fn(l);
       mass_left -:= 1/#ag;
       if not silent then <<a,b,c> where a,b,c is root_sub(l),RealField(5)!(mass_left/mass), #l`AutomorphismGroup>; end if;
       if mass_left eq 0 then
-        g`Representatives := done;
+        // do we want to do this if find_canonical is false?
+        // trust the user to do the right thing?
+        g`Representatives := done; 
       else
         nlat := {@LatticeWithGram(GramMatrix(n)): n in nb_fn(l,p)@};
         nlat := {@n: n in nlat|n notin done and n notin todo@};
