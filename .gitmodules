@@ -2,5 +2,5 @@
 	path = lattices/FiniteGroups
 	url = https://github.com/roed314/FiniteGroups.git
 [submodule "Parallel.magma"]
-	path = Parallel.magma
+	path = lattices/Parallel.magma
 	url = git@github.com:edgarcosta/Parallel.magma.git

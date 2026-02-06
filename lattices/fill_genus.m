@@ -78,7 +78,7 @@ intrinsic FillGenus(label::MonStgElt : genus_reps_func := GenusRepresentatives, 
     s := StringToInteger(basics["signature"]);
     as_num := (s * (n - s) ne 0);
     if as_num then
-        assert n gt 2;
+        // assert n gt 2;
         K := RationalsAsNumberField();
         LWG := NumberFieldLatticeWithGram;
         DualLat := RescaledDualNF;
@@ -95,17 +95,22 @@ intrinsic FillGenus(label::MonStgElt : genus_reps_func := GenusRepresentatives, 
     L0 := LWG(gram0);
     // reps := GenusRepresentatives(L0);
     vprintf FillGenus, 1 : "Computing genus representatives...";
-    vtime FillGenus, 1 : reps := genus_reps_func(L0);
-    vprintf FillGenus, 1 : "Done!\n";
-    advanced["class_number"] := #reps;
-    if n eq s then
+    reps := [];
+    genus_success := false;
+    if n ne 2 then
+        genus_success, reps, elapsed := TimeoutCall(timeout, genus_reps_func, <L0>, 1);
+        vprintf FillGenus, 1 : "Genus representatives computed in %o seconds\n", elapsed;
+    end if;
+    if genus_success then
+        advanced["class_number"] := #reps;
+        advanced["adjacency_matrix"] := "\\N";
+        advanced["adjacency_polynomials"] := "\\N";
+        vprintf FillGenus, 1 : "Computing adjacency matrix for p = ";
         hecke_mats := AssociativeArray();
         hecke_polys := AssociativeArray();
-        // in case this is not the intrinsic, we need to set the reps for the adjacency matrix
         G := Genus(L0);
         // This works for 2.28 - should be replaced by SetGenus in 2.29
         G`Representatives := reps;
-        vprintf FillGenus, 1 : "Computing adjacency matrix for p = ";
         for p in hecke_primes(n) do
             vprintf FillGenus, 1 : "%o:", p;
             vtime FillGenus, 1 : Ap := AdjacencyMatrix(G,p);
@@ -116,9 +121,6 @@ intrinsic FillGenus(label::MonStgElt : genus_reps_func := GenusRepresentatives, 
         vprintf FillGenus, 1 : "Done!\n";
         advanced["adjacency_matrix"] := to_postgres(hecke_mats);
         advanced["adjacency_polynomials"] := to_postgres(hecke_polys);
-    else
-        advanced["adjacency_matrix"] := "\\N";
-        advanced["adjacency_polynomials"] := "\\N";
     end if;
     disc_invs := basics["discriminant_group_invs"];
     disc_invs := "[" * disc_invs[2..#disc_invs-1] * "]"; // Switch to square brackets
@@ -267,7 +269,7 @@ intrinsic FillGenus(label::MonStgElt : genus_reps_func := GenusRepresentatives, 
 
     for idx->L in lats do
         lat := L;
-        if (n eq s) then
+        if genus_success and (n eq s) then
             pNeighbors := AssociativeArray();
             for p in hecke_primes(n) do
                 // !!! TODO - check that permutation is applied in the right direction
