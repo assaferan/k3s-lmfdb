@@ -48,23 +48,7 @@ end function;
 // changes the basis and doesn't carry the automorphism group along, so these
 // last three are not very useful.
 
-// this is a fairly crude usage of the new function
-function aut_faster(lat)
-  r := Rank(lat);
-  rs := RSpace(Z,r);
-  sub_rs := Saturation(sub<rs|[Eltseq(x[1]): x in ShortVectors(lat,2)]>);
-  sat_sub2 := sub<lat|Basis(sub_rs)>;
-  if r-Rank(sat_sub2) in [1,2] and Determinant(lat)/Determinant(sat_sub2) gt 10 then
-    // rearrange the lattice to put these first
-    bas := rep{Basis(sat_sub2) cat [lat.i: i in s]:s in Subsets({1..r},r-Rank(sat_sub2))|lat eq sub<lat|sat_sub2,[lat.i: i in s]>};
-    newlat := LatticeWithGram(Matrix(r,r,[(x,y): x,y in bas]));
-    naut := aut_char_simple(newlat,Rank(sat_sub2));
-  else naut := AutomorphismGroup(lat);
-  end if;
-  return naut;
-end function;
-
-function neighbours(pd:bd := Infinity(),thorough := false, avoid := {}, target := <{*"A999"*},[1001]>, lose_mass := 0, p := 2, show := false, done := {@@}, max_nonroot := Infinity(), silent := false, aut_gp_fn := AutomorphismGroup, isom_fn := IsIsomorphic, nb_fn := Neighbours)
+function neighbours_old(pd:bd := Infinity(),thorough := false, avoid := {}, target := <{*"A999"*},[1001]>, lose_mass := 0, p := 2, show := false, done := {@@}, max_nonroot := Infinity(), silent := false, aut_gp_fn := AutomorphismGroup, isom_fn := IsIsomorphic, nb_fn := Neighbours)
   _ := aut_gp_fn(pd);
   g := Genus(pd);
   mass := Mass(pd) - lose_mass;
@@ -112,3 +96,5 @@ function neighbours(pd:bd := Infinity(),thorough := false, avoid := {}, target :
   if missing_mass gt 0 then "warning: finished exploring the graph but still missing", missing_mass, "of mass; consider rerunning with larger p"; end if;
   return done,rss,g;
 end function;
+
+

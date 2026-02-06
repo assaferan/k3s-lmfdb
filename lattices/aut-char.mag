@@ -203,6 +203,7 @@ end function;
 // homomorphism above in the full automorphism group will be small, and that
 // would make this one better.
 function aut_char_simple(lat,d)
+  vprint Lattice,2: "entering aut_char_simple";
   if assigned lat`AutomorphismGroup then return lat`AutomorphismGroup; end if;
   if d eq Rank(lat) then return AutomorphismGroup(lat); end if;
   gm := GramMatrix(lat);
@@ -210,12 +211,14 @@ function aut_char_simple(lat,d)
   sublat := LatticeWithGram(gm_sub);
   aut_sub := AutomorphismGroup(sublat);
   p := 10;
+  vprint Lattice,2: "reducing automorphism group of sublattice mod p";
   repeat
     p := NextPrime(p);
     asp := ChangeRing(aut_sub,GF(p));
   until #aut_sub eq #asp;
   to_asp := hom<aut_sub->asp|[aut_sub.i: i in [1..Ngens(aut_sub)]]>;
   
+  vprint Lattice,2: "finding kernel";
   ker := lift(lat,Identity(aut_sub));
   lift_gens := [lift(lat,aut_sub.i:only_one): i in [1..Ngens(aut_sub)]];
   if forall{x: x in lift_gens|#x gt 0} then
@@ -225,19 +228,24 @@ function aut_char_simple(lat,d)
     lat`AutomorphismGroup := aut_lat;
     return aut_lat;
   else
+    vprintf Lattice,2: "trying to lift generators ";
     can_lift := AssociativeArray(aut_sub);
     for i in [1..Ngens(aut_sub)] do
+      vprintf Lattice,2: ".";
       if #lift_gens[i] gt 0 then can_lift[aut_sub.i] := lift_gens[i]; end if;
     end for;
+    vprintf Lattice,2: "\n";
     cant_lift := {@aut_sub.i: i in [1..Ngens(aut_sub)]|#lift_gens[i] eq 0@};
     pow := 0;
     repeat
       lift_sub := sub<aut_sub|Keys(can_lift)>;
       pow +:= 1;
       // unfortunately the composition tree doesn't seem to help with this
+      vprint Lattice,2: "searching for subgroups up to index", 2^pow;
       new_gps := [x`subgroup@@to_asp: x in Subgroups(asp: IndexLimit := 2^pow)|Index(asp,x`subgroup) gt 2^(pow-1)];
       new_gps := [x: x in new_gps|IsConjugateSubgroup(aut_sub,x,lift_sub)];
 
+      vprintf Lattice,2: "examining subgroups ";
       for g in new_gps do
         gcons := [g^t: t in Transversal(aut_sub,Normalizer(aut_sub,g))];
         for gc in gcons do
@@ -245,12 +253,14 @@ function aut_char_simple(lat,d)
           if exists{c: c in cant_lift|c in gc} then continue; end if;
           inds := [i: i in [1..Ngens(gc)]|gc.i notin lift_sub];
           lift_gc := [lift(lat,gc.i:only_one): i in inds];
+          vprintf Lattice,2: ".";
           if forall{l: l in lift_gc|#l gt 0} then
             // we have found the group
             // if it were bigger we would have found it already
             aut_lat := MatrixGroup<Rank(lat),Z|ker,&cat lift_gc,&cat [can_lift[i]: i in Keys(can_lift)]>;
             // #sub<aut_sub|Keys(can_lift)>, #aut_lat;
             lat`AutomorphismGroup := aut_lat;
+            vprintf Lattice,2: "\n";
             return aut_lat;
           else
             for i in [1..#inds] do
@@ -261,6 +271,7 @@ function aut_char_simple(lat,d)
           end if;
         end for;
       end for;
+      vprintf Lattice,2: "\n";
     until false;
   end if;
 end function;
@@ -281,23 +292,46 @@ function aut_max_ind(lat,d: max_ind := 100)
   aut_sub := AutomorphismGroup(sublat);
 
   ker := lift(lat,Identity(aut_sub));
-  lift_sub := sub<aut_sub|>;
-  lifts := ker;
+  vprint Lattice,1: "trying to lift generators";
+  lift_gens := [lift(lat,aut_sub.i:only_one): i in [1..Ngens(aut_sub)]];
+  if forall{x: x in lift_gens|#x gt 0} then
+    vprint Lattice,1: "the whole group lifts";
+    aut_lat := MatrixGroup<Rank(lat),Z|ker cat [x[1]: x in lift_gens]>;
+    assert #aut_lat eq #ker*#aut_sub;
+    lat`AutomorphismGroup := aut_lat;
+    return aut_lat;
+  else
+    lift_sub := sub<aut_sub|[aut_sub.i: i in [1..Ngens(aut_sub)]|#lift_gens[i] gt 0]>;
+    lifts := ker cat [x[1]: x in lift_gens|#x gt 0];
+  end if;
   cant_lift := {@@};
+  tries := 0;
+  lift_ind := Index(aut_sub,lift_sub);
   repeat
-    printf ".";
+    tries +:= 1;
+    if tries ge max_ind*10 then
+      vprint Lattice, 1: "giving up, reverting to standard function";
+      laut := aut_char_simple(lat,d);
+      lat`AutomorphismGroup := laut;
+      return laut;
+    end if;
+    if IsDivisibleBy(tries,max_ind) then
+      vprint Lattice, 1: "tried", tries, "random elements so far, still looking";
+    end if;
+    vprintf Lattice, 2: ".";
     l := Random(aut_sub);
     if l in lift_sub then continue; end if;
     lg := lift(lat,l:only_one);
     if #lg gt 0 then
       Append(~lifts,lg[1]);
       lift_sub := sub<aut_sub|lift_sub,l>;
-      printf " %o ", Index(aut_sub,lift_sub);
+      vprintf Lattice, 2: " %o ", Index(aut_sub,lift_sub);
     else
       Include(~cant_lift,l);
     end if;
-  until Index(aut_sub,lift_sub) le max_ind;
-  printf "\n";
+    lift_ind := Index(aut_sub,lift_sub);
+  until lift_ind le max_ind;
+  vprintf Lattice, 1: "index now %o\n", lift_ind;
   
   tr := {@x: x in Transversal(aut_sub,lift_sub)|x ne Identity(aut_sub)@};
 
@@ -327,6 +361,7 @@ function aut_max_ind(lat,d: max_ind := 100)
       if #lv gt 0 then
         Append(~lifts,lv[1]);
         lift_sub := new_sub;
+        vprint Lattice,2: "found new element, index now", Index(aut_sub,lift_sub);
         tr := {@x: x in tr|x notin new_sub@};
       else
         tr := {@x: x in tr|[x,v] notin pairs@};
@@ -335,14 +370,44 @@ function aut_max_ind(lat,d: max_ind := 100)
       tr := {@x: x in tr|[x,v] notin pairs@};
       Include(~cant_lift,v);
     end if;
-    printf "%o ", #tr;
+    vprint Lattice,2: #tr, "elements of transversal left to try";
   end while;
   aut_lat := MatrixGroup<Rank(lat),Z|lifts>;
   assert #aut_lat eq #lift_sub*#ker;
   lat`AutomorphismGroup := aut_lat;
   return aut_lat;
 end function;
-  
+
+// this is a fairly crude usage of the new function
+function aut_faster(lat)
+  if assigned lat`AutomorphismGroup then return lat`AutomorphismGroup; end if;
+  r := Rank(lat);
+  rs := RSpace(Z,r);
+  keep := sub<lat|>;
+  for i in [1..10] do
+    vprint Lattice,2: "looking at sublattice spanned by vectors of norm at most", i;
+    sub_rs := Saturation(sub<rs|[Eltseq(x[1]): x in ShortVectors(lat,i)]>);
+    sat_sub2 := sub<lat|Basis(sub_rs)>;
+    if r-Rank(sat_sub2) in [1..3] then keep := sat_sub2; end if;
+    if r-Rank(sat_sub2) eq 0 then break i; end if;
+  end for;
+  if r-Rank(keep) in [1..3] then 
+    // rearrange the lattice to put these first
+    bas := rep{Basis(keep) cat [lat.i: i in s]:s in Subsets({1..r},r-Rank(keep))|lat eq sub<lat|keep,[lat.i: i in s]>};
+    newlat := LatticeWithGram(Matrix(r,r,[(x,y): x,y in bas]));
+    vprint Lattice,1: "finding automorphism group by means of sublattice of codimension", r-Rank(keep);
+    // naut := aut_char_simple(newlat,Rank(keep));
+    naut := aut_max_ind(newlat,Rank(keep));
+    oldaut := naut^(GL(r,Z)!Matrix(bas));
+    lat`AutomorphismGroup := oldaut;
+    // assert forall{i: i in Generators(oldaut)|i*g*Transpose(i) eq g} where g is GramMatrix(lat);
+  else
+    vprint Lattice,2: "falling back on Magma's built-in";
+    naut := AutomorphismGroup(lat);
+  end if;
+  return naut;
+end function;
+
 /* unused code:
       for p in CartesianProduct([Set(i): i in short
     if exists(pol2){x: x in DefiningPolynomials(p)|Degree(x) eq 2 and forall{i: i in [1..(dim-1)*nr]|Degree(x,i) eq 0}} then

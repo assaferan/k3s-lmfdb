@@ -1,0 +1,63 @@
+Attach("my_neighbors.m");
+// load "mats10.mag";
+// implement Plesken's criterion to test whether a lattice is a block form:
+// (x,x) > 1 for all elements of the dual lattice
+function is_block(lat)
+  dl := Dual(lat);
+  _,denom := IsPower(Determinant(lat)*Determinant(dl),Dimension(lat));
+  denom := AbsoluteValue(denom);
+  min := Minimum(LatticeWithGram(GramMatrix(dl)))/denom;
+  return (min gt 1);
+end function;
+
+function gen_to_lat(l:gen_fn := list_genus,nb_fn := newNeighbours)
+  p := 1;            
+  done := false;
+  repeat p := NextPrime(p);
+         nb := [];
+         try nb := gen_fn(l:p := p,thorough,aut_gp_fn := aut_faster,nb_fn := nb_fn);
+             assert Mass(l) eq &+[1/#AutomorphismGroup(i): i in nb];
+             done := true;                                          
+         catch e;
+           if Mass(l) lt &+[Q|1/#AutomorphismGroup(i): i in nb] then
+             "??? too heavy ???"; // shouldn't happen any more
+           elif GCD(p,Determinant(l)) eq 1 then
+             printf "??? unexpected error for lattice of determinant %o with p = %o\n",Determinant(l),p;
+             else printf "lattice of determinant %o failed at p = %o\n",Determinant(l),p; // not a big surprise
+           end if;
+         end try;      
+  until done;      
+  return nb;
+end function;
+
+function block_search(lats:gen_fn := list_genus,nb_fn := newNeighbours)
+  all_lats := [];
+  blockforms := [];
+  times := [];
+  for l in lats do
+    cp := Cputime();
+    nb := gen_to_lat(l:gen_fn := gen_fn,nb_fn := nb_fn);
+    Append(~all_lats,nb);
+    bl := [x: x in nb|is_block(x)];
+    if #bl gt 0 then
+      printf "!!! found %o block-form%o of determinant %o\n", #bl,#bl eq 1 select "" else "s", Determinant(l);
+      blockforms cat:= bl;
+    end if;
+    "finished lattice", Index(lats,l), "of disc", Determinant(l), "in", Cputime(cp), "seconds";
+    Append(~times,Cputime(cp));
+  end for;                                                       
+  return all_lats,blockforms,times;
+end function;
+
+// using Plesken, prop. III.1
+is_ind := func<lat|is_block(lat) and (Dimension(lat)-Dimension(l3) le 5 and #OrthogonalDecomposition(l3) eq 1) where l3 is sub<lat|[x[1]: x in ShortVectors(lat,3)]>>;
+
+/*
+al := []; bl := []; ct := [];
+for i in [1..Ceiling(#lats/10)] do
+  cp := Cputime();
+  a,b,t := block_search(lats[10*i-9..Min(10*i,#lats)]);
+  al cat:= a; bl cat:= b; ct cat:= t;
+  "--- done decile", i, "in", Cputime(cp), "seconds";
+end for;
+*/
