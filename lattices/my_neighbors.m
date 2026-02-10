@@ -20,11 +20,26 @@ function newTwoNeighbors(L, dep)
     v := L ! o[1].1;
     if Norm(v) mod 4 eq 0 and not IsZero(v) then
       // latter check to catch a bug in LineOrbit
-      AdjoinNeighbor(~TA, ~Lambda, Neighbor(L,v,2), dep);
+      // now that we have better isomorphism testing, this one is a
+      // serious waste of time.
+      // AdjoinNeighbor(~TA, ~Lambda, Neighbor(L,v,2), dep);
+      nb := Neighbor(L,v,2);
+      // I believe the issue here is only that sometimes we go from odd to
+      // even and it isn't in the same genus
+      if Genus(nb) eq Genus(L) then
+        vprint Genus,2: "adding new lattice";
+        Append(~Lambda,nb);
+      end if;
+      
       B := [ b : b in Basis(L) | (v,b) mod 2 eq 1 ];
       if #B gt 0 then
         v +:= 2*B[1];
-        AdjoinNeighbor(~TA, ~Lambda, Neighbor(L,v,2), dep);
+        // AdjoinNeighbor(~TA, ~Lambda, Neighbor(L,v,2), dep);
+        nb := Neighbor(L,v,2);
+        if Genus(nb) eq Genus(L) then
+          vprint Genus,2: "adding new lattice";
+          Append(~Lambda,nb);
+        end if;
       end if;
     end if;
   end for;

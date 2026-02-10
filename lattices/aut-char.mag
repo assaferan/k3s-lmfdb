@@ -283,7 +283,7 @@ end function;
 // be lifted, then search over coset representatives to get it exactly right
 // caution: if the index of the subgroup of Aut(char. sublat.) that can be
 // lifted to the full lattice is greater than max_ind, this will run forever
-function aut_max_ind(lat,d: max_ind := 100)
+function aut_max_ind(lat,d: max_ind := 10)
   if assigned lat`AutomorphismGroup then return lat`AutomorphismGroup; end if;
   if d eq Rank(lat) then return AutomorphismGroup(lat); end if;
   gm := GramMatrix(lat);
@@ -310,10 +310,12 @@ function aut_max_ind(lat,d: max_ind := 100)
   repeat
     tries +:= 1;
     if tries ge max_ind*10 then
-      vprint Lattice, 1: "giving up, reverting to standard function";
+      /*vprint Lattice, 1: "giving up, reverting to standard function";
       laut := aut_char_simple(lat,d);
       lat`AutomorphismGroup := laut;
-      return laut;
+      return laut;*/
+      vprint Lattice,1: "not found yet, increasing the possible index";
+      max_ind *:= 2;
     end if;
     if IsDivisibleBy(tries,max_ind) then
       vprint Lattice, 1: "tried", tries, "random elements so far, still looking";
@@ -393,7 +395,12 @@ function aut_faster(lat)
   end for;
   if r-Rank(keep) in [1..3] then 
     // rearrange the lattice to put these first
-    bas := rep{Basis(keep) cat [lat.i: i in s]:s in Subsets({1..r},r-Rank(keep))|lat eq sub<lat|keep,[lat.i: i in s]>};
+    // doesn't always work
+    // bas := rep{Basis(keep) cat [lat.i: i in s]:s in Subsets({1..r},r-Rank(keep))|lat eq sub<lat|keep,[lat.i: i in s]>};
+    sub_rs := sub<rs|[Eltseq(i): i in Basis(keep)]>;
+    q,toq := quo<rs|sub_rs>;
+    bas := Basis(keep) cat [lat!Eltseq(i@@toq): i in Basis(q)];
+    assert #bas eq r and sub<lat|bas> eq lat;
     newlat := LatticeWithGram(Matrix(r,r,[(x,y): x,y in bas]));
     vprint Lattice,1: "finding automorphism group by means of sublattice of codimension", r-Rank(keep);
     // naut := aut_char_simple(newlat,Rank(keep));
