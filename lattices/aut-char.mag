@@ -395,7 +395,12 @@ function aut_faster(lat)
   end for;
   if r-Rank(keep) in [1..3] then 
     // rearrange the lattice to put these first
-    bas := rep{Basis(keep) cat [lat.i: i in s]:s in Subsets({1..r},r-Rank(keep))|lat eq sub<lat|keep,[lat.i: i in s]>};
+    // doesn't always work
+    // bas := rep{Basis(keep) cat [lat.i: i in s]:s in Subsets({1..r},r-Rank(keep))|lat eq sub<lat|keep,[lat.i: i in s]>};
+    sub_rs := sub<rs|[Eltseq(i): i in Basis(keep)]>;
+    q,toq := quo<rs|sub_rs>;
+    bas := Basis(keep) cat [lat!Eltseq(i@@toq): i in Basis(q)];
+    assert #bas eq r and sub<lat|bas> eq lat;
     newlat := LatticeWithGram(Matrix(r,r,[(x,y): x,y in bas]));
     vprint Lattice,1: "finding automorphism group by means of sublattice of codimension", r-Rank(keep);
     // naut := aut_char_simple(newlat,Rank(keep));
