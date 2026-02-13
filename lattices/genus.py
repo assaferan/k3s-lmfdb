@@ -730,7 +730,8 @@ COL_TYPE_LATTICE = {'det': 'bigint',
  'norm1_sublattice': 'text',
  'norm1_complement': 'text',
  'Zn_complement': 'text',
- 'successive_minima': 'integer[]'}
+ 'successive_minima': 'integer[]',
+ 'shortest': 'integer[]'}
 
 FIELDS_LATTICE_GENUS = ["genera_basic.format", "genera_advanced.format"]
 FIELDS_LATTICE = ["lat.format"]

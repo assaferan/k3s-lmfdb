@@ -170,6 +170,7 @@ intrinsic FillGenus(label::MonStgElt : genus_reps_func := GenusRepresentatives, 
         lat["theta_prec"] := "\\N";
         lat["dual_theta_series"] := "\\N";
         lat["successive_minima"] := "\\N";
+        lat["shortest"] := "\\N";
         gram := GramMatrix(L);
         if (n eq s) then 
             // TODO : This is lossy - change later
