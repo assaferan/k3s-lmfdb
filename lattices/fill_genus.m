@@ -77,22 +77,14 @@ intrinsic FillGenus(label::MonStgElt : genus_reps_func := GenusRepresentatives, 
     n := StringToInteger(basics["rank"]);
     s := StringToInteger(basics["nplus"]);
     as_num := (s * (n - s) ne 0);
-    if as_num then
-        // assert n gt 2;
-        K := RationalsAsNumberField();
-        LWG := NumberFieldLatticeWithGram;
-        DualLat := RescaledDualNF;
-    else
-        assert n eq s;
-        K := Rationals();
-        LWG := LatticeWithGram;
-        DualLat := Dual; 
-    end if;
+    K := Rationals();
+    LWG := LatticeWithGram;
+    DualLat := Dual; 
     rep := basics["rep"];
     // Switch to square brackets
     rep := "[" * rep[2..#rep - 1] * "]"; // Switch to square brackets
     gram0 := Matrix(K, n, eval rep);
-    L0 := LWG(gram0);
+    L0 := LWG(gram0 : CheckPositive := false);
     // reps := GenusRepresentatives(L0);
     vprintf FillGenus, 1 : "Computing genus representatives...";
     reps := [];
@@ -114,16 +106,20 @@ intrinsic FillGenus(label::MonStgElt : genus_reps_func := GenusRepresentatives, 
         // This works for 2.28 - should be replaced by SetGenus in 2.29
         G`Representatives := reps;
         G`IsNatural := true;
-        for p in hecke_primes(n) do
+        if (n eq s) then
+          for p in hecke_primes(n) do
             vprintf FillGenus, 1 : "%o:", p;
             vtime FillGenus, 1 : Ap := AdjacencyMatrix(G,p);
             fpf := Factorization(CharacteristicPolynomial(Ap));
             hecke_mats[p] := Ap;
             hecke_polys[p] := [(<Coefficients(pair[1]), pair[2]>) : pair in fpf];
-        end for;
-        vprintf FillGenus, 1 : "Done!\n";
-        advanced["adjacency_matrix"] := to_postgres(hecke_mats);
-        advanced["adjacency_polynomials"] := to_postgres(hecke_polys);
+          end for;
+          vprintf FillGenus, 1 : "Done!\n";
+          advanced["adjacency_matrix"] := to_postgres(hecke_mats);
+          advanced["adjacency_polynomials"] := to_postgres(hecke_polys);
+        end if;
+    else
+        reps := [];
     end if;
     disc_invs := basics["discriminant_group_invs"];
     disc_invs := "[" * disc_invs[2..#disc_invs-1] * "]"; // Switch to square brackets
@@ -134,7 +130,7 @@ intrinsic FillGenus(label::MonStgElt : genus_reps_func := GenusRepresentatives, 
         vprintf FillGenus, 1 : "Computing canonical forms and automorphism groups for representative ";
     end if;
 
-    if #reps gt 0 then
+    if (#reps gt 0) then
         to_per_rep := timeout div #reps + 1;
     end if;
 
