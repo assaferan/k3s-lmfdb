@@ -30,8 +30,10 @@ Label: `dimension.signature.determinant.genus_spec.tiebreaker` where
 | [aut_size](https://beta.lmfdb.org/knowledge/show/lattice.group_order) | numeric | size of automorphism group |
 | aut_label | text | label for the automorphism group as an abstract group |
 | [rank](https://beta.lmfdb.org/knowledge/show/lattice.dimension) | smallint | the rank of the lattice |
-| signature | smallint | the number of positive diagonal entries over R, so that a positive definite lattice has signature equal to dimension |
-| [det](https://beta.lmfdb.org/knowledge/show/lattice.determinant) | bigint | determinant of Gram matrix |
+| nplus | smallint | the number of positive diagonal entries over R, so that a positive definite lattice has nplus equal to dimension |
+| [det_abs](https://beta.lmfdb.org/knowledge/show/lattice.determinant) | bigint | absolute value of determinant of Gram matrix |
+| [det_sign](https://beta.lmfdb.org/knowledge/show/lattice.determinant) | smallint | sign of determinant of Gram matrix |
+| [det_radical](https://beta.lmfdb.org/knowledge/show/lattice.determinant) | bigint | radical of determinant of Gram matrix |
 | disc | bigint | the discriminant (close to the determinant, but off by a factor of 2 in some cases) |
 | [class_number](https://beta.lmfdb.org/knowledge/show/lattice.class_number) | smallint | size of the genus |
 | [density](https://beta.lmfdb.org/knowledge/show/lattice.density) | numeric | center density of the lattice centered sphere packing (only for definite lattices) |
@@ -41,6 +43,7 @@ Label: `dimension.signature.determinant.genus_spec.tiebreaker` where
 | [minimum](https://beta.lmfdb.org/knowledge/show/lattice.minimal_vector) | integer | length of shortest vector (only for definite lattices) |
 | name | text | a string like "E8", often null |
 | [theta_series](https://beta.lmfdb.org/knowledge/show/lattice.theta) | numeric[] | a vector, counting the number of representations of n (odd) or 2n (even) |
+| theta_prec | integer | Absolute precision of the theta series and dual theta series |
 | [gram](https://beta.lmfdb.org/knowledge/show/lattice.gram) | integer[] | A list of human-preferred gram matrices other than the canonical Gram matrix; often there will only be zero or one, but for E8 for example we want to include multiple ones |
 | [canonical_gram] | integer[] | Canonical form for the Gram matrix; currently only available for definite lattices |
 | [label](https://beta.lmfdb.org/Lattice/Labels) | text | We're changing the label; see above |
@@ -48,14 +51,14 @@ Label: `dimension.signature.determinant.genus_spec.tiebreaker` where
 | conway_symbol | text | the Conway symbol for the genus |
 | pneighbors | jsonb | a dictionary with primes as keys and a list of labels as values (the p-neighbors) |
 | discriminant_group_invs | integer[] | Smith-style invariants for the discriminant group |
-| festi_veniani_index | integer | the index of the lattice automorphism group within the automorphism group of the discriminant group |
+| festi_veniani_index | numeric | the index of the lattice automorphism group within the automorphism group of the discriminant group |
 | is_even | boolean | whether the lattice is even |
 | dual_label | text | the label for the minimal integral scaling of the dual lattice (may be null if the discriminant is too large) |
 | dual_theta_series | numeric[] | the theta series of the dual lattice |
 | dual_hermite | numeric | the Hermite number of the dual lattice (only for definite lattices) |
 | dual_kissing | bigint | the kissing number of the dual lattice (only for definite lattices) |
 | dual_density | numeric | the center density of the dual lattice (only for definite lattices) |
-| dual_det | bigint | the determinant of the dual lattice |
+| dual_det | numeric | the determinant of the dual lattice |
 | dual_conway | text | the Conway symbol for the dual lattice |
 | is_universal | boolean | whether the lattice represents all positive integers |
 | is_indecomposable | boolean | whether the lattice is (orthogonally) indecomposable |

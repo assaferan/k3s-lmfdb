@@ -139,6 +139,9 @@ intrinsic FillGenus(label::MonStgElt : genus_reps_func := GenusRepresentatives, 
         for col in ["rank", "nplus", "det", "disc", "discriminant_group_invs", "is_even"] do
             lat[col] := basics[col];
         end for;
+        lat["det_abs"] := Abs(lat["det"]);
+        lat["det_sign"] := Sign(lat["det"]);
+        lat["det_radical"] := &*PrimeDivisors(lat["det"]);
         lat["genus_label"] := basics["label"];
         lat["class_number"] := advanced["class_number"];
         D := DualLat(L);
@@ -149,8 +152,6 @@ intrinsic FillGenus(label::MonStgElt : genus_reps_func := GenusRepresentatives, 
         // The magma implemntation is in version 2.29 that has some bugs
         // This is no longer part of the lattice, only of the genus
         // lat["dual_conway"] := "\\N";
-        lat["gram"] := "\\N";  
-        lat["canonical_gram"] := "\\N";
         lat["aut_size"] := "\\N";
         lat["festi_veniani_index"] := "\\N";
         lat["aut_label"] := "\\N";
@@ -168,6 +169,11 @@ intrinsic FillGenus(label::MonStgElt : genus_reps_func := GenusRepresentatives, 
         lat["successive_minima"] := "\\N";
         lat["shortest"] := "\\N";
         gram := GramMatrix(L);
+        lat["gram"] := Eltseq(gram);
+        lat["gram_is_canonical"] := false;
+        lat["gram_other"] := []; // This will be manually set in cases like E8 where we want to store other options
+        // At the moment we do not have a notion of a canonical gram in the indefinite case
+        // !!!  TODO - Need to be able to compute some things for indefinite lattices
         if (n eq s) then 
             // TODO : This is lossy - change later
             vprintf FillGenus, 1 : "%o", gram;
@@ -175,7 +181,8 @@ intrinsic FillGenus(label::MonStgElt : genus_reps_func := GenusRepresentatives, 
             vprintf FillGenus, 1 : "Canonical form computed in %o seconds\n", elapsed;
             if success then 
                 canonical_gram := canonical_gram[1];
-                lat["canonical_gram"] := Eltseq(canonical_gram);
+                lat["gram"] := Eltseq(canonical_gram);
+                lat["gram_is_canonical"] := true;
             end if;
             success, aut_group, elapsed := TimeoutCall(to_per_rep, AutomorphismGroup, <L>, 1);
             vprintf FillGenus, 1 : "Automorphism group computed in %o seconds\n", elapsed;
@@ -211,10 +218,6 @@ intrinsic FillGenus(label::MonStgElt : genus_reps_func := GenusRepresentatives, 
             lat["dual_theta_series"] := Eltseq(ThetaSeries(D, prec - 1));
             minima, vecs := SuccessiveMinima(L); // for now we just throw vecs away
             lat["successive_minima"] := minima;
-        else
-            lat["gram"] := [Eltseq(gram)];
-            // At the moment we do not have a notion of a canonical gram in the indefinite case
-            // !!!  TODO - Need to be able to compute some things for indefinite lattices
         end if;
         lat["dual_label"] := "\\N"; // set in next stage
         lat["is_indecomposable"] := "\\N"; // set in next stage
