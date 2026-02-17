@@ -228,11 +228,11 @@ intrinsic FillGenus(label::MonStgElt : timeout := 1800)
             m := Minimum(L);
             lat["minimum"] := m;
             prec := Max(150, m+4);
+            lat["theta_prec"] := prec;
             success, theta_series, elapsed := TimeoutCall(to_per_rep, ThetaSeries, <L, prec-1>, 1);
             vprintf FillGenus, 1 : "Theta series computed in %o seconds\n", elapsed;
             if success then 
                 lat["theta_series"] := Eltseq(theta_series[1]);
-                lat["theta_prec"] := prec;
             end if;
             success, dual_theta_series, elapsed := TimeoutCall(to_per_rep, ThetaSeries, <D, prec-1>, 1);
             vprintf FillGenus, 1 : "Dual theta series computed in %o seconds\n", elapsed;
