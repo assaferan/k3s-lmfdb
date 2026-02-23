@@ -10,6 +10,7 @@
 //
 // Errors are prefixed with "ERROR: label: ..."
 // Extract retry list: grep '^ERROR:' output.txt | cut -d: -f2 | tr -d ' ' > genera_failed.txt
+// Check timings: cut -f 7 -d ' ' output.txt  | sort -n | tail
 
 AttachSpec("lattices.spec");
 

@@ -1,3 +1,5 @@
+Z := Integers();
+
 // let's try to implement the same idea in Magma
 // for some reason Magma's OrthogonalComplement only works for LatNF, not Lat
 function orth_comp(rs,sub)

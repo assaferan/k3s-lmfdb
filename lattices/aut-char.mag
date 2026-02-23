@@ -31,7 +31,7 @@ lat := LatticeWithGram(mat8);
 aut_lat := aut_char(lat,4); // the first 4 generators give the root lattice
 */
 
-load "orth_dec.mag";
+import "orth_dec.mag" : orth_dec;
 Z := Integers();
 Q := Rationals();
 
