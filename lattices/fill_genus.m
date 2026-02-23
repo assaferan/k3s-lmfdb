@@ -53,13 +53,24 @@ function RescaledDualNF(L)
     return NumberFieldLattice(Rows(ChangeRing(B, K)) : InnerProduct := ChangeRing(M,K));
 end function;
 
-function genus_reps(L)
-    if Type(L) eq LatNF then return GenusRepresentatives(L); end if;
-    if IsOdd(L) then return GenusRepresentatives(L); end if;
+function genus_reps_Magma(L)
+    // The bound is set to infinity to avoid Magma printing an error message
+    // without throwing a runtime error.
+    if IsPositiveDefinite(GramMatrix(L)) or (Rank(L) eq 2) then
+      return GenusRepresentatives(L : Bound := Infinity());
+    end if;
+    // due to some bugs in Magma, we convert to number field
+    LF := NumberFieldLattice(L);
+    reps := GenusRepresentatives(LF);
+    return [LatticeWithGram(ChangeRing(GramMatrix(r), Integers()) :
+			    CheckPositive := false) : r in reps];
+end function;
+
+function genus_reps_Logan(L)
     return Setseq(neighbours(L : thorough));
 end function;
 
-intrinsic FillGenus(label::MonStgElt : genus_reps_func := GenusRepresentatives, timeout := 1800)
+intrinsic FillGenus(label::MonStgElt : timeout := 1800)
 {Fill the data for a genus and its lattice representatives, given files in the genera_basic format.}
     data := Split(Split(Read("genera_basic/" * label), "\n")[1], "|");
     basic_format := Split(Read("genera_basic.format"), "|");
@@ -75,30 +86,30 @@ intrinsic FillGenus(label::MonStgElt : genus_reps_func := GenusRepresentatives, 
     lats := [];
 
     n := StringToInteger(basics["rank"]);
-    s := StringToInteger(basics["signature"]);
+    s := StringToInteger(basics["nplus"]);
     as_num := (s * (n - s) ne 0);
-    if as_num then
-        // assert n gt 2;
-        K := RationalsAsNumberField();
-        LWG := NumberFieldLatticeWithGram;
-        DualLat := RescaledDualNF;
-    else
-        assert n eq s;
-        K := Rationals();
-        LWG := LatticeWithGram;
-        DualLat := Dual; 
-    end if;
+    K := Rationals();
+    LWG := LatticeWithGram;
+    DualLat := Dual; 
     rep := basics["rep"];
     // Switch to square brackets
     rep := "[" * rep[2..#rep - 1] * "]"; // Switch to square brackets
     gram0 := Matrix(K, n, eval rep);
-    L0 := LWG(gram0);
-    // reps := GenusRepresentatives(L0);
+    L0 := LWG(gram0 : CheckPositive := false);
     vprintf FillGenus, 1 : "Computing genus representatives...";
     reps := [];
-    genus_success := false;
-    if n ne 2 then
-        genus_success, reps, elapsed := TimeoutCall(timeout, genus_reps_func, <L0>, 1);
+    // Taking care of a special case Magma has trouble with
+    genus_success := true;
+    if n eq 2 then 
+        d := Determinant(L0);
+        if IsSquare(-d) then 
+            // At the moment, we don't do anything in this case.
+            // I think this is always class number 1, but check!
+            genus_success := false;
+        end if; 
+    end if;
+    if genus_success then
+        genus_success, reps, elapsed := TimeoutCall(timeout, genus_reps_Magma, <L0>, 1);
         vprintf FillGenus, 1 : "Genus representatives computed in %o seconds\n", elapsed;
     end if;
     advanced["class_number"] := "\\N";
@@ -106,6 +117,7 @@ intrinsic FillGenus(label::MonStgElt : genus_reps_func := GenusRepresentatives, 
     advanced["adjacency_polynomials"] := "\\N";
     if genus_success then
         reps := reps[1];
+        vprintf FillGenus, 1 : "Number of genus representatives: %o\n", #reps;
         advanced["class_number"] := #reps;
         vprintf FillGenus, 1 : "Computing adjacency matrix for p = ";
         hecke_mats := AssociativeArray();
@@ -114,16 +126,20 @@ intrinsic FillGenus(label::MonStgElt : genus_reps_func := GenusRepresentatives, 
         // This works for 2.28 - should be replaced by SetGenus in 2.29
         G`Representatives := reps;
         G`IsNatural := true;
-        for p in hecke_primes(n) do
+        if (n eq s) then
+          for p in hecke_primes(n) do
             vprintf FillGenus, 1 : "%o:", p;
             vtime FillGenus, 1 : Ap := AdjacencyMatrix(G,p);
             fpf := Factorization(CharacteristicPolynomial(Ap));
             hecke_mats[p] := Ap;
             hecke_polys[p] := [(<Coefficients(pair[1]), pair[2]>) : pair in fpf];
-        end for;
-        vprintf FillGenus, 1 : "Done!\n";
-        advanced["adjacency_matrix"] := to_postgres(hecke_mats);
-        advanced["adjacency_polynomials"] := to_postgres(hecke_polys);
+          end for;
+          vprintf FillGenus, 1 : "Done!\n";
+          advanced["adjacency_matrix"] := to_postgres(hecke_mats);
+          advanced["adjacency_polynomials"] := to_postgres(hecke_polys);
+        end if;
+    else
+        reps := [];
     end if;
     disc_invs := basics["discriminant_group_invs"];
     disc_invs := "[" * disc_invs[2..#disc_invs-1] * "]"; // Switch to square brackets
@@ -134,11 +150,20 @@ intrinsic FillGenus(label::MonStgElt : genus_reps_func := GenusRepresentatives, 
         vprintf FillGenus, 1 : "Computing canonical forms and automorphism groups for representative ";
     end if;
 
+    if (#reps gt 0) then
+        to_per_rep := timeout div #reps + 1;
+    end if;
+
     for Li->L in reps do
         lat := AssociativeArray();
-        for col in ["rank", "signature", "det", "disc", "discriminant_group_invs", "is_even"] do
+        for col in ["rank", "nplus", "det", "disc", "discriminant_group_invs", "is_even"] do
             lat[col] := basics[col];
         end for;
+        det := StringToInteger(lat["det"]);
+        Remove(~lat, "det");
+        lat["det_abs"] := Abs(det);
+        lat["det_sign"] := Sign(det);
+        lat["det_radical"] := &*PrimeDivisors(det);
         lat["genus_label"] := basics["label"];
         lat["class_number"] := advanced["class_number"];
         D := DualLat(L);
@@ -149,8 +174,6 @@ intrinsic FillGenus(label::MonStgElt : genus_reps_func := GenusRepresentatives, 
         // The magma implemntation is in version 2.29 that has some bugs
         // This is no longer part of the lattice, only of the genus
         // lat["dual_conway"] := "\\N";
-        lat["gram"] := "\\N";  
-        lat["canonical_gram"] := "\\N";
         lat["aut_size"] := "\\N";
         lat["festi_veniani_index"] := "\\N";
         lat["aut_label"] := "\\N";
@@ -166,17 +189,24 @@ intrinsic FillGenus(label::MonStgElt : genus_reps_func := GenusRepresentatives, 
         lat["theta_prec"] := "\\N";
         lat["dual_theta_series"] := "\\N";
         lat["successive_minima"] := "\\N";
-        gram := GramMatrix(L);
+        lat["shortest"] := "\\N";
+        gram := LLLGram(GramMatrix(L));
+        lat["gram"] := Eltseq(gram);
+        lat["gram_is_canonical"] := false;
+        lat["gram_others"] := []; // This will be manually set in cases like E8 where we want to store other options
+        // At the moment we do not have a notion of a canonical gram in the indefinite case
+        // !!!  TODO - Need to be able to compute some things for indefinite lattices
         if (n eq s) then 
             // TODO : This is lossy - change later
             vprintf FillGenus, 1 : "%o", gram;
-            success, canonical_gram, elapsed := TimeoutCall(timeout, CanonicalForm, <gram>, 1);
+            success, canonical_gram, elapsed := TimeoutCall(to_per_rep, CanonicalForm, <gram>, 1);
             vprintf FillGenus, 1 : "Canonical form computed in %o seconds\n", elapsed;
             if success then 
                 canonical_gram := canonical_gram[1];
-                lat["canonical_gram"] := Eltseq(canonical_gram);
+                lat["gram"] := Eltseq(canonical_gram);
+                lat["gram_is_canonical"] := true;
             end if;
-            success, aut_group, elapsed := TimeoutCall(timeout, AutomorphismGroup, <L>, 1);
+            success, aut_group, elapsed := TimeoutCall(to_per_rep, AutomorphismGroup, <L>, 1);
             vprintf FillGenus, 1 : "Automorphism group computed in %o seconds\n", elapsed;
             if success then 
                 aut_group := aut_group[1];
@@ -205,15 +235,27 @@ intrinsic FillGenus(label::MonStgElt : genus_reps_func := GenusRepresentatives, 
             m := Minimum(L);
             lat["minimum"] := m;
             prec := Max(150, m+4);
-            lat["theta_series"] := Eltseq(ThetaSeries(L, prec - 1));
             lat["theta_prec"] := prec;
-            lat["dual_theta_series"] := Eltseq(ThetaSeries(D, prec - 1));
-            minima, vecs := SuccessiveMinima(L); // for now we just throw vecs away
+            success, theta_series, elapsed := TimeoutCall(to_per_rep, ThetaSeries, <L, prec-1>, 1);
+            vprintf FillGenus, 1 : "Theta series computed in %o seconds\n", elapsed;
+            if success then 
+                lat["theta_series"] := Eltseq(theta_series[1]);
+            else
+                lat["theta_series"] := [1];
+                lat["theta_prec"] := 1;
+            end if;
+            success, dual_theta_series, elapsed := TimeoutCall(to_per_rep, ThetaSeries, <D, prec-1>, 1);
+            vprintf FillGenus, 1 : "Dual theta series computed in %o seconds\n", elapsed;
+            if success then 
+                lat["dual_theta_series"] := Eltseq(dual_theta_series[1]);
+            end if;
+            //success, minima, elapsed := TimeoutCall(to_per_rep, SuccessiveMinima, <L>, 2);
+            //vprintf FillGenus, 1 : "Successive minima computed in %o seconds\n", elapsed;
+            //if success then 
+            //lat["successive_minima"] := minima[1]; // For now, we throw away the vecs
+            //end if;
+            minima, vecs := SuccessiveMinima(L);
             lat["successive_minima"] := minima;
-        else
-            lat["gram"] := [Eltseq(gram)];
-            // At the moment we do not have a notion of a canonical gram in the indefinite case
-            // !!!  TODO - Need to be able to compute some things for indefinite lattices
         end if;
         lat["dual_label"] := "\\N"; // set in next stage
         lat["is_indecomposable"] := "\\N"; // set in next stage
@@ -246,11 +288,13 @@ intrinsic FillGenus(label::MonStgElt : genus_reps_func := GenusRepresentatives, 
     function cmp_lat(L1, L2)
         d := L2["aut_size"] - L1["aut_size"];
         if (d ne 0) then return d; end if;
-        prec := Minimum(L1["theta_prec"], L2["theta_prec"]);
-        for i in [1..prec - 1] do
-            d := L1["theta_series"][i] - L2["theta_series"][i];
-            if (d ne 0) then return d; end if;
-        end for;
+        if Type(L1["theta_series"]) eq SeqEnum and Type(L2["theta_series"]) eq SeqEnum then
+            prec := Minimum(L1["theta_prec"], L2["theta_prec"]);
+            for i in [1..prec - 1] do
+                d := L1["theta_series"][i] - L2["theta_series"][i];
+                if (d ne 0) then return d; end if;
+            end for;
+        end if;
         for i in [1..n^2] do
             d := L1["gram"][i] - L2["gram"][i];
             if (d ne 0) then return d; end if;
@@ -293,7 +337,7 @@ intrinsic FillGenus(label::MonStgElt : genus_reps_func := GenusRepresentatives, 
         else
             lat["pneighbors"] := "\\N";
         end if;
-        Remove(~lat, "theta_prec");
+        // Remove(~lat, "theta_prec");
         error if Keys(lat) ne Set(lat_format), [k : k in lat_format | k notin Keys(lat)], [k : k in Keys(lat) | k notin lat_format];
         output := Join([Sprintf("%o", to_postgres(lat[k])) : k in lat_format], "|");
         Write("lattice_data/" * lat["label"], output : Overwrite);

@@ -586,7 +586,7 @@ def create_genus_entry(genus_symbol):
     table_row = {}
     table_row['label'] = create_genus_label(genus_symbol)
     table_row['rank'] = rank = genus_symbol.rank()
-    table_row['signature'] = genus_symbol.signature_pair()[0]
+    table_row['nplus'] = genus_symbol.signature_pair()[0]
     table_row['det'] = genus_symbol.determinant()
     table_row['disc'] = table_row['det']
     if (genus_symbol.is_even() and genus_symbol.rank() % 2 == 1):
@@ -670,7 +670,7 @@ COL_TYPE_LATTICE_GENUS = {'det': 'bigint',
  'id': 'bigint',
  'level': 'bigint',
  'rank': 'smallint',
- 'signature': 'smallint',
+ 'nplus': 'smallint',
  'is_even': 'boolean',
  'discriminant_form': 'integer[]',
  'discriminant_group_invs': 'integer[]',
@@ -684,22 +684,25 @@ COL_TYPE_LATTICE_GENUS = {'det': 'bigint',
  'theta_prec' : 'smallint',
  'dual_conway_symbol' : 'text'}
 
-COL_TYPE_LATTICE = {'det': 'bigint',
+COL_TYPE_LATTICE = {'det_abs': 'bigint',
+ 'det_sign': 'smallint',
+ 'det_radical': 'bigint',
  'disc': 'bigint',
- 'dual_det': 'bigint',
+ 'dual_det': 'numeric',
  'dual_kissing': 'bigint',
  'id': 'bigint',
  'kissing': 'bigint',
  'level': 'bigint',
- 'festi_veniani_index': 'integer',
+ 'festi_veniani_index': 'numeric',
  'minimum': 'integer',
  'class_number': 'smallint',
  'rank': 'smallint',
- 'signature': 'smallint',
+ 'nplus': 'smallint',
  'is_even': 'boolean',
- 'canonical_gram': 'integer[]',
  'discriminant_group_invs': 'integer[]',
  'gram': 'integer[]',
+ 'gram_is_canonical': 'boolean',
+ 'gram_others': 'integer[]',
  'pneighbors': 'jsonb',
  'aut_size': 'numeric',
  'density': 'numeric',
@@ -730,7 +733,8 @@ COL_TYPE_LATTICE = {'det': 'bigint',
  'norm1_sublattice': 'text',
  'norm1_complement': 'text',
  'Zn_complement': 'text',
- 'successive_minima': 'integer[]'}
+ 'successive_minima': 'integer[]',
+ 'shortest': 'integer[]'}
 
 FIELDS_LATTICE_GENUS = ["genera_basic.format", "genera_advanced.format"]
 FIELDS_LATTICE = ["lat.format"]

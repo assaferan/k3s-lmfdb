@@ -1,0 +1,10 @@
+genera_todo*.txt
+fix*.py
+add_shortest_column.py
+.vscode
+genera_basic
+genera_advanced
+tables
+lattice_data
+logs
+outputs

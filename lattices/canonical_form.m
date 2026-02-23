@@ -9,7 +9,7 @@ function IsWellRounded(A)
     return Rank(LminA) eq Rank(L);
 end function;
 
-function V_wr_cvp(A)
+function V_wr_cvp(A : bound := Infinity())
     assert IsWellRounded(A);
     L := LatticeWithGram(A);
     minA := &cat[[v,-v] : v in ShortestVectors(L)];
@@ -21,7 +21,11 @@ function V_wr_cvp(A)
     B := ChangeRing(Matrix(Basis(LminA)),Rationals());
     L_B := LatticeWithGram(B * A * Transpose(B));
     ret := [Vector(ChangeRing(v, Rationals())) : v in minA];
-    ret cat:= &cat[[c - Vector(ChangeRing(v, Rationals())*B) : v in ClosestVectors(L_B, c*B^(-1))] : c in cs | not IsZero(c)];
+    if Type(bound) eq RngIntElt then
+        ret cat:= &cat[[c - Vector(ChangeRing(v, Rationals())*B) : v in ClosestVectors(L_B, c*B^(-1) : Max := bound)] : c in cs | not IsZero(c)];
+    else
+        ret cat:= &cat[[c - Vector(ChangeRing(v, Rationals())*B) : v in ClosestVectors(L_B, c*B^(-1))] : c in cs | not IsZero(c)];
+    end if;
     return ret;
 end function;
 
@@ -70,7 +74,7 @@ function V_ms(A : max_num := Infinity())
     return VA;
 end function;
 
-function V_cvp(A : max_num := Infinity())
+function V_cvp(A : max_num := Infinity(), bound := Infinity())
     A := ChangeRing(A, Rationals());
     L := LatticeWithGram(A);
     if Type(max_num) eq RngIntElt then
@@ -98,10 +102,10 @@ function V_cvp(A : max_num := Infinity())
     if (r eq Rank(L)) then
 	    V_cvp_A2 := [];
     else
-	    V_cvp_A2 := V_cvp(A2 : max_num := max_num);
+	    V_cvp_A2 := V_cvp(A2 : max_num := max_num, bound := bound);
         if IsEmpty(V_cvp_A2) then return []; end if;
     end if;
-    A1_part := [Vector(Rationals(), v)*B1 : v in V_wr_cvp(A1)];
+    A1_part := [Vector(Rationals(), v)*B1 : v in V_wr_cvp(A1 : bound := bound)];
     proj_Z := ChangeRing(Denominator(proj)*proj, Integers());
     assert sub<L | A1_part> eq L1;
     // This is not true, need to figure out what the correct statement is
@@ -109,11 +113,17 @@ function V_cvp(A : max_num := Infinity())
     B2_Z := ChangeRing(Denominator(proj)*B2, Integers());
     A2_part := [Solution(Transpose(proj_Z), Vector(v)*B2_Z) : v in V_cvp_A2];
     // union_A2_part := &cat[[v - w : w in ClosestVectors(L1,v - v*proj)] : v in A2_part];
-    union_A2_part :=  &cat[[v - w : w in ClosestVectors(L1,v - v*Transpose(proj))] : v in A2_part];
+    if Type(bound) eq RngIntElt then
+        union_A2_part :=  &cat[[v - w : w in ClosestVectors(L1,v - v*Transpose(proj) : Max := bound)] : v in A2_part];
+    else
+        union_A2_part :=  &cat[[v - w : w in ClosestVectors(L1,v - v*Transpose(proj))] : v in A2_part];
+    end if;
     VA := A1_part cat union_A2_part;
     VA := [v : v in VA | v ne 0];
     Lsub :=  sub<L | VA>;
-    assert Lsub eq L;
+    if Type(bound) ne RngIntElt then
+        assert Lsub eq L;
+    end if;
     return VA;
 end function;
 

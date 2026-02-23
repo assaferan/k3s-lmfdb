@@ -32,6 +32,8 @@ aut_lat := aut_char(lat,4); // the first 4 generators give the root lattice
 */
 
 load "orth_dec.mag";
+Z := Integers();
+Q := Rationals();
 
 // given a polynomial of degree 2, change the variables to make it diagonal.
 function reduce_quad(pol)
