@@ -12,6 +12,7 @@ end function;
 // it decomposes into components of rank 5 and 2
 // lat := LatticeWithGram(SymmetricMatrix([6,-9,16,-3,7,18,1,-2,-8,8,0,0,-7,4,4,1,-1,0,-2,0,2,-1,2,1,0,0,0,2]));
 function orth_dec(lat)
+  if Rank(lat) eq 0 then return [lat]; end if;
   mat := GramMatrix(lat);
   dim := Rank(lat);
   lll,tolll := LLLGram(mat);
@@ -44,10 +45,11 @@ function orth_dec(lat)
           return orth_comps_lat;
         else
           components := Append([PowerStructure(ModTupRng)|x: x in components|x notin nonorth_comps],sat_comp);
-          sub_rs := sub<rs|Basis(Saturation(sub<rs|sub_rs,v>))>;
+          // sub_rs := sub<rs|Basis(Saturation(sub<rs|sub_rs,v>))>;
+          sub_rs := sub<rs|sub_rs,v>;
           if sub_rs eq rs then
             orig_cps := [sub<lat|[v*Transpose(lll): v in Basis(r)]>: r in components];
-            grams := [GramMatrix(i): i in orig_cps];
+            try grams := [GramMatrix(i): i in orig_cps]; catch e "failed on lattice", lat; error "foo"; end try;
             return orig_cps, grams;
           end if;
         end if;

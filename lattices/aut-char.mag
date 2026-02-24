@@ -320,7 +320,7 @@ function aut_max_ind(lat,d: max_ind := 10)
   lift_ind := Index(aut_sub,lift_sub);
   repeat
     tries +:= 1;
-    if tries ge max_ind*10 then
+    if tries ge max_ind*2 then
       /*vprint Lattice, 1: "giving up, reverting to standard function";
       laut := aut_char_simple(lat,d);
       lat`AutomorphismGroup := laut;
@@ -448,7 +448,7 @@ end function;
 
 // this is a fairly crude usage of the new function
 function aut_faster(lat: use_orth_dec := true)
-  //if assigned lat`AutomorphismGroup then return lat`AutomorphismGroup; end if;
+  if assigned lat`AutomorphismGroup then return lat`AutomorphismGroup; end if;
   if use_orth_dec then
     od := orth_dec(lat);
     assert Determinant(Matrix(&cat [Basis(i): i in od])) in [1,-1];

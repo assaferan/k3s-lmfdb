@@ -11,10 +11,12 @@ function root_sub(lat)
   rl := {*Strings()|*};
   tor := [];
   sl := sub<lat|[x[1]: x in ShortVectors(lat,2,2)]>;
-  Zn := RSpace(Z,Dimension(lat));
-  slzn := sub<Zn|[Eltseq(i): i in ShortestVectors(lat)]>;
-  tor := Moduli(Saturation(slzn)/slzn);
-  od := OrthogonalDecomposition(sl);
+  if Rank(sl) eq 0 then od := []; else
+    Zn := RSpace(Z,Dimension(lat));
+    slzn := sub<Zn|[Eltseq(i): i in ShortestVectors(lat)]>;
+    tor := Moduli(Saturation(slzn)/slzn);
+    od := OrthogonalDecomposition(sl);
+  end if;
   for i in od do
     sdi := IntegerToString(Dimension(i));
     for l in ["A","D","E"] do
@@ -42,13 +44,42 @@ end function;
 // thorough included for backward compatibility
 
 scaled_dual := func<l|LatticeWithGram(ChangeRing(LCM([Denominator(i): i in Eltseq(g)])*g,Z)) where g is GramMatrix(Dual(l))>;
+Zx := PolynomialRing(Z);
 
-// bd := Infinity(); p := 2; done := {@@}; silent := false; aut_gp_fn := aut_faster; nb_fn := newNeighbours; cf_fn := func<x|CanonicalForm(GramMatrix(x))>; hash := func<x|<IsEven(x) select "even" else "odd",a,b,c,d,#aut_gp_fn(x),ThetaSeries(x,(IsEven(x) select 20 else 10))> where a,b,c is root_sub(x) where d is [Rank(stoi(x,i)): i in [1..6]]>; find_canonical := false;
+// things I was hoping would distinguish lattices
+// SuccessiveMinima doesn't work, because Magma crashes when it might be useful
+function genera_shortest(l)
+  sv := ShortestVectors(l);
+  ocsv := [LatticeWithGram(GramMatrix(orth_comp(r,sub<r|Eltseq(i)>))): i in ShortestVectors(l)] where r is RSpace(Z,10,GramMatrix(l));
+  gens := {*Genus(i): i in ocsv*};
+  return gens;
+end function;
+  
+// https://www.math.rwth-aachen.de/~Gabriele.Nebe/LATTICES/bacher.html
+function bacher(l: nm := Minimum(l))
+  usv := [x[1]: x in ShortVectors(l,nm,nm)];
+  sv := {@s*v: s in [1,-1], v in usv@};
+  pairs := {@{sv[x],sv[y]}: y in [x+1..#sv], x in [1..#sv]|(sv[x],sv[y]) eq nm/2@};
+  bp := Zx!0;
+  for v in usv do
+    hv := {x: x in sv|{x,v} in pairs};
+    ps := {x: x in Subsets(hv,2)|x in pairs};
+    bp +:= Zx.1^#ps;
+  end for;
+  return bp;
+end function;
+  
+// bd := Infinity(); p := 2; done := {@@}; silent := false; aut_gp_fn := aut_faster; nb_fn := newNeighbours; cf_fn := func<x|CanonicalForm(GramMatrix(x))>; hash := easy_hash; find_canonical := false;
 stoi := func<l,i|sub<l|[x[1]: x in ShortVectors(l,i)]>>;
-easy_hash := func<x|<IsEven(x) select "even" else "odd",a,b,c,d,/*#aut_faster(x),*/ThetaSeries(x,(IsEven(x) select 20 else 10)),ThetaSeries(dl,(IsEven(dl) select 20 else 10))> where dl is scaled_dual(x) where a,b,c is root_sub(x) where d is [Rank(stoi(x,i)): i in [1..6]]>;
+easy_hash := func<x|<IsEven(x) select "even" else "odd",a,b,c,d,/*#aut_faster(x),*/ThetaSeries(x,(IsEven(x) select 20 else 10)),ThetaSeries(dl,(IsEven(dl) select 20 else 10)),genera_shortest(x)> where dl is scaled_dual(x) where a,b,c is root_sub(x) where d is [Rank(stoi(x,i)): i in [1..6]]>;
 // further improvement: only compute canonical form when we need it,
 // unless find_canonical is set to true
-function list_genus(pd: bd := Infinity(), p := 2, done := {@@}, silent := false, aut_gp_fn := AutomorphismGroup, nb_fn := Neighbours, cf_fn := func<x|CanonicalForm(GramMatrix(x))>, hash := easy_hash, thorough := true, find_canonical := false)
+// function list_genus(pd: bd := Infinity(), p := 2, done := {@@}, silent := false, aut_gp_fn := AutomorphismGroup, nb_fn := Neighbours, cf_fn := func<x|CanonicalForm(GramMatrix(x))>, hash := easy_hash, thorough := true, find_canonical := false)
+
+// for now the code does compute canonical forms as a method of isomorphism
+// testing when the hash fails.  Maybe I could replace this by some
+// other isomorphism test, but would it really be easier?
+function list_genus(pd: bd := Infinity(), p := 2, done := {@@}, silent := false, aut_gp_fn := aut_faster, nb_fn := newNeighbours, cf_fn := func<x|CanonicalForm(GramMatrix(x))>, hash := easy_hash, thorough := true, find_canonical := false)
   _ := aut_gp_fn(pd);
   g := Genus(pd);
   mass := Mass(pd);
@@ -73,17 +104,19 @@ function list_genus(pd: bd := Infinity(), p := 2, done := {@@}, silent := false,
     else
       // select one at random, but spread things out by taking a hash we
       // haven't used recently
-      ind := random{x: x in [1..#todo]|hashes[x] notin used_hashes};
-      Include(~used_hashes,hashes[ind]);
-      if #used_hashes eq #Set(hashes) then
+      if #used_hashes ge #Set(hashes) then
         used_hashes := {@@};
         if not silent then vprintf Genus,2: "h"; end if;
       end if;
+      ind := random{x: x in [1..#todo]|hashes[x] notin used_hashes};
+      Include(~used_hashes,hashes[ind]);
     end if;
     // ind := (#good_inds gt 0 select Random(good_inds) else Random(1,#todo));
     l := todo[ind];
-    if find_canonical or #good_inds eq 0 then cf := cf_fn(l); end if; 
-    assert #good_inds eq 0 or cf notin can_forms;
+    if find_canonical or #good_inds eq 0 then
+      cf := cf_fn(l);
+      assert #good_inds eq 0 or cf notin can_forms;
+    end if; 
     todo := {@todo[i]: i in Remove([1..#todo],ind)@};
     the_hash := hashes[ind];
     Remove(~hashes,ind);
@@ -108,6 +141,7 @@ function list_genus(pd: bd := Infinity(), p := 2, done := {@@}, silent := false,
         can_forms[#done] := cf;
       end if;
       Append(~found_hashes,the_hash);
+      vprint Lattice, 2: "computing automorphism group of lattice with Gram matrix", Eltseq(GramMatrix(l));
       ag := aut_gp_fn(l);
       mass_left -:= 1/#ag;
       if not silent then <<a,b,c> where a,b,c is root_sub(l),RealField(5)!(mass_left/mass), #l`AutomorphismGroup>; end if;
