@@ -50,14 +50,16 @@ Zx := PolynomialRing(Z);
 
 // things I was hoping would distinguish lattices
 // SuccessiveMinima doesn't work, because Magma crashes when it might be useful
+// this does distinguish things, but may not make the code faster
 function genera_shortest(l)
   sv := ShortestVectors(l);
   ocsv := [LatticeWithGram(GramMatrix(orth_comp(r,sub<r|Eltseq(i)>))): i in ShortestVectors(l)] where r is RSpace(Z,Rank(l),GramMatrix(l));
   gens := {*Genus(i): i in ocsv*};
   return gens;
 end function;
-  
+
 // https://www.math.rwth-aachen.de/~Gabriele.Nebe/LATTICES/bacher.html
+// doesn't seem to help much
 function bacher(l: nm := Minimum(l))
   usv := [x[1]: x in ShortVectors(l,nm,nm)];
   sv := {@s*v: s in [1,-1], v in usv@};
@@ -70,10 +72,23 @@ function bacher(l: nm := Minimum(l))
   end for;
   return bp;
 end function;
-  
+
+// this is a strong invariant but slow to calculate
+function pairs_to_n(l: n := 3)
+  vton := [];
+  i := 1;
+  repeat
+    vi := {@x[1]: x in ShortVectors(l,i,i)@};
+    if #vi gt 0 then Append(~vton,vi); end if;
+    i +:= 1;
+  until #vton eq n;
+  pairs := [{*AbsoluteValue((x,y)): x in vton[i], y in vton[j]*}: j in [i..n], i in [1..n]];
+  return pairs;
+end function;
+
 // bd := Infinity(); p := 2; done := {@@}; silent := false; aut_gp_fn := aut_faster; nb_fn := newNeighbours; cf_fn := func<x|CanonicalForm(GramMatrix(x))>; hash := easy_hash; find_canonical := false;
 stoi := func<l,i|sub<l|[x[1]: x in ShortVectors(l,i)]>>;
-easy_hash := func<x|<IsEven(x) select "even" else "odd",a,b,c,d,/*#aut_faster(x),*/ThetaSeries(x,(IsEven(x) select 20 else 10)),ThetaSeries(dl,(IsEven(dl) select 20 else 10)),genera_shortest(x)> where dl is scaled_dual(x) where a,b,c is root_sub(x) where d is [Rank(stoi(x,i)): i in [1..6]]>;
+easy_hash := func<x|<IsEven(x) select "even" else "odd",a,b,c,d,/*#aut_faster(x),*/ThetaSeries(x,(IsEven(x) select 200 div Dimension(x) else 100 div Dimension(x))),ThetaSeries(dl,(IsEven(dl) select 200 div Dimension(dl) else 100 div Dimension(dl)))> where dl is scaled_dual(x) where a,b,c is root_sub(x) where d is [Rank(stoi(x,i)): i in [1..6]]>;
 // further improvement: only compute canonical form when we need it,
 // unless find_canonical is set to true
 // function list_genus(pd: bd := Infinity(), p := 2, done := {@@}, silent := false, aut_gp_fn := AutomorphismGroup, nb_fn := Neighbours, cf_fn := func<x|CanonicalForm(GramMatrix(x))>, hash := easy_hash, thorough := true, find_canonical := false)

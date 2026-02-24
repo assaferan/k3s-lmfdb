@@ -448,10 +448,10 @@ end function;
 // use orthogonal decompositions and assemble them later
 
 // this is a fairly crude usage of the new function
-function aut_faster(lat: use_orth_dec := true)
+function aut_faster(lat: use_orth_dec := true, orth_bd := 10)
   if assigned lat`AutomorphismGroup then return lat`AutomorphismGroup; end if;
   if use_orth_dec then
-    od := orth_dec(lat);
+    od := orth_dec(lat: norm_bd := orth_bd*(IsEven(lat) select 2 else 1));
     assert Determinant(Matrix(&cat [Basis(i): i in od])) in [1,-1];
     if #od gt 1 then 
       lat`AutomorphismGroup := aut_orth_dec(od,lat);
