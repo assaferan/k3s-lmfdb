@@ -1,5 +1,6 @@
 declare verbose FillGenus, 1;
 
+import "aut-char.mag" : aut_faster;
 import "neighbours.mag" : neighbours;
 
 function hecke_primes(rank)
@@ -206,7 +207,7 @@ intrinsic FillGenus(label::MonStgElt : timeout := 1800)
                 lat["gram"] := Eltseq(canonical_gram);
                 lat["gram_is_canonical"] := true;
             end if;
-            success, aut_group, elapsed := TimeoutCall(to_per_rep, AutomorphismGroup, <L>, 1);
+            success, aut_group, elapsed := TimeoutCall(to_per_rep, aut_faster, <L>, 1);
             vprintf FillGenus, 1 : "Automorphism group computed in %o seconds\n", elapsed;
             if success then 
                 aut_group := aut_group[1];
