@@ -119,7 +119,7 @@ function V_cvp(A : max_num := Infinity(), bound := Infinity())
         union_A2_part :=  &cat[[v - w : w in ClosestVectors(L1,v - v*Transpose(proj))] : v in A2_part];
     end if;
     VA := A1_part cat union_A2_part;
-    VA := [v : v in VA | v ne 0];
+    VA := [v : v in VA | not IsZero(v)];
     Lsub :=  sub<L | VA>;
     if Type(bound) ne RngIntElt then
         assert Lsub eq L;
