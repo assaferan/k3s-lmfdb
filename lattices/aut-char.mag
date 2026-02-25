@@ -450,7 +450,7 @@ end function;
 
 
 // this is a fairly crude usage of the new function
-function aut_faster(lat: use_orth_dec := true, orth_bd := 10)
+function aut_faster(lat: use_orth_dec := true, orth_bd := Min(10,150 div Dimension(lat)))
   if assigned lat`AutomorphismGroup then return lat`AutomorphismGroup; end if;
   if use_orth_dec then
     od := OrthogonalDecompositionFaster(lat: norm_bd := orth_bd*(IsEven(lat) select 2 else 1));

@@ -20,6 +20,7 @@ end function;
 // of their sum is not a component, the lattice is indecomposable
 function orth_dec(lat: norm_bd := Infinity())
   if Rank(lat) eq 0 then return [lat]; end if;
+  done := false;
   mat := GramMatrix(lat);
   dim := Rank(lat);
   lll,tolll := LLLGram(mat);
@@ -42,18 +43,23 @@ function orth_dec(lat: norm_bd := Infinity())
         new_orth := orth_comp(rs,new_comp);
         // why doesn't Saturation give you a subspace of the same space?
         sat_comp := sub<rs|Basis(Saturation(new_comp))>;
-        if sat_comp eq rs or (Rank(sat_comp) eq Rank(rs)-1 and sub<rs|new_orth,sat_comp> ne rs) then return [lat] /*[LatticeWithGram(GramMatrix(rs))]*/; end if; // done
+        if sat_comp eq rs or (Rank(sat_comp) eq Rank(rs)-1 and sub<rs|new_orth,sat_comp> ne rs) then
+          done := true; ret_val := [lat]; /*[LatticeWithGram(GramMatrix(rs))]*/
+          break l;
+        end if; // done
         if sub<rs|new_orth,sat_comp> eq rs then
           // we have found a component; recursively find the rest
           vprint Lattice, 1: "splitting into two factors";
+          new_orth_bas := Basis(new_orth);
           orth_lat := LatticeWithGram(GramMatrix(new_orth));
-          orth_rs := RSpace(Z,Rank(new_orth),GramMatrix(new_orth));
+          // orth_rs := RSpace(Z,Rank(new_orth),GramMatrix(new_orth));
           orth_comps := orth_dec(orth_lat:norm_bd := norm_bd);
-          orth_comps_lll := Append([sub<lat_lll|[&+[v[i]*Basis(new_orth)[i]: i in [1..Dimension(orth_lat)]]: v in Basis(c)]>: c in orth_comps],sub<lat_lll|Basis(sat_comp)>);
+          orth_comps_lll := Append([sub<lat_lll|[&+[v[i]*new_orth_bas[i]: i in [1..Dimension(orth_lat)]]: v in Basis(c)]>: c in orth_comps],sub<lat_lll|Basis(sat_comp)>);
           orth_comps_lat := [sub<lat|[lat|Vector(v)*tolll: v in Basis(c)]>: c in orth_comps_lll];
           assert forall{x: x,y in orth_comps_lat|x eq y or forall{a: a in Basis(x), b in Basis(y)|(a,b) eq 0}};
           assert sub<lat|orth_comps_lat> eq lat;
-          return orth_comps_lat;
+          done := true; ret_val := orth_comps_lat;
+          break l;
         else
           vprint Lattice, 2: "combining", #nonorth_comps, "component"*(#nonorth_comps eq 1 select "" else "s"), "with a new one";
           components := Append([PowerStructure(ModTupRng)|x: x in components|x notin nonorth_comps],sat_comp);
@@ -65,16 +71,20 @@ function orth_dec(lat: norm_bd := Infinity())
             // can we do better than this?
             if sub<rs|sat_sum_comps,orth_sub> eq rs then
               // we have found a decomposition
+              bas_ssc := Basis(sat_sum_comps);
+              ssc := LatticeWithGram(GramMatrix(sat_sum_comps));
+              od_ssc := orth_dec(ssc);
               // unfortunately we need this silly PowerStructure, to stop
               // Magma from deciding that the dimension is part of the type
-              od_ssc := [PowerStructure(ModTupRng)|sub<rs|Basis(i)>: i in orth_dec(sat_sum_comps:norm_bd := norm_bd)];
+              od_ssc_full := [PowerStructure(ModTupRng)|sub<rs|[&+[v[i]*bas_ssc[i]: i in [1..Dimension(ssc)]]: v in Basis(d)]>: d in od_ssc];
+              // od_ssc := [PowerStructure(ModTupRng)|sub<rs|Basis(i)>: i in orth_dec(sat_sum_comps:norm_bd := norm_bd)];
               rso := sub<rs|orth_sub>;
-              orth_comps_lll := Append(od_ssc,rso);
+              orth_comps_lll := Append(od_ssc_full,rso);
               orth_comps_lat := [sub<lat|[lat|Vector(v)*tolll: v in Basis(c)]>: c in orth_comps_lll];
               assert forall{i: a in Basis(i), b in Basis(j), i,j in orth_comps_lat|i eq j or (a,b) eq 0};
-              return orth_comps_lat;
+              done := true; ret_val := orth_comps_lat; break l;
             elif #components eq 1 then
-              return [lat];
+              done := true; ret_val := [lat]; break l;
             end if;
             // otherwise we can't conclude yet; maybe there are two D_8
             // components with an element of norm 4 bridging them
@@ -84,17 +94,21 @@ function orth_dec(lat: norm_bd := Infinity())
           if sub_rs eq rs then
             orig_cps := [sub<lat|[v*Transpose(lll): v in Basis(r)]>: r in components];
             try grams := [GramMatrix(i): i in orig_cps]; catch e "failed on lattice", lat; error "foo"; end try;
-            return orig_cps, grams;
+            done := true; ret_val := orig_cps; break l;
           end if;
         end if;
       end if;
     end for;
   end for;
 
-  if norm_bd le Max(Diagonal(lll)) then
+  if not done and norm_bd ge Max(Diagonal(lll)) then
     "!!! failed to find orthogonal decomposition";
+    return [lat];
+  else
+    assert sub<lat|ret_val> eq lat;
+    assert forall{x: x,y in ret_val|x eq y or forall{a: a in Basis(x), b in Basis(y)|(a,b) eq 0}};
+    return ret_val;
   end if;
-  return [lat];
   // error "shouldn't be here"; // this can now happen if norm_bd is set
 end function;
 
