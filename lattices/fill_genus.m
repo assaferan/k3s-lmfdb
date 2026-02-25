@@ -10,6 +10,20 @@ function hecke_primes(rank)
     end if;
 end function;
 
+intrinsic StringToReal(s::MonStgElt) -> RngIntElt
+{ Converts a decimal string (like 123.456 or 1.23456e40 or 1.23456e-10) to a real number at default precision. }
+    if #s eq 0 then return 0.0; end if;
+    if "e" in s then
+        t := Split(s,"e");
+        require #t eq 2: "Input should have the form 123.456e20 or 1.23456e-10";
+        return StringToReal(t[1])*10.0^StringToInteger(t[2]);
+    end if;
+    t := Split(s,".");
+    require #t le 2: "Input should have the form 123 or 123.456 or 1.23456e-10";
+    n := StringToInteger(t[1]);  s := t[1][1] eq "-" select -1 else 1;
+    return #t eq 1 select RealField()!n else RealField()!n + s*RealField()!StringToInteger(t[2])/10^#t[2];
+end intrinsic;
+
 function ThetaSeriesIncremental(L, target_prec, timeout)
     best_theta := [];
     best_prec := 0;
@@ -26,7 +40,7 @@ function ThetaSeriesIncremental(L, target_prec, timeout)
         best_prec := current_prec;
         vprintf FillGenus, 1 : "Theta series to precision %o in %o s\n", current_prec, elapsed;
         if current_prec ge target_prec then break; end if;
-        remaining -:= Ceiling(elapsed);
+        remaining -:= Ceiling(StringToReal(elapsed));
         prec *:= 2;
     end while;
     return best_theta, best_prec;
