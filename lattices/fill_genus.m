@@ -329,8 +329,10 @@ intrinsic FillGenus(label::MonStgElt : timeout := 1800)
     vprintf FillGenus, 1 : "Done!\n";
 
     function cmp_lat(L1, L2)
-        d := L2["aut_size"] - L1["aut_size"];
-        if (d ne 0) then return d; end if;
+        if Type(L1["aut_size"]) eq RngIntElt and Type(L2["aut_size"]) eq RngIntElt then
+            d := L2["aut_size"] - L1["aut_size"];
+            if (d ne 0) then return d; end if;
+        end if;
         if Type(L1["theta_series"]) eq SeqEnum and Type(L2["theta_series"]) eq SeqEnum then
             prec := Minimum(L1["theta_prec"], L2["theta_prec"]);
             for i in [1..prec - 1] do
