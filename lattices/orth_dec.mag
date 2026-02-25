@@ -52,7 +52,7 @@ function orth_dec(lat: norm_bd := Infinity())
         end if; // done
         if sub<rs|new_orth,sat_comp> eq rs then
           // we have found a component; recursively find the rest
-          vprint Lattice, 1: "splitting into two factors";
+          vprint Lattice, 1: "%%% splitting into two factors";
           orth_lat := LatticeWithGram(GramMatrix(new_orth));
           orth_rs := RSpace(Z,Rank(new_orth),GramMatrix(new_orth));
           orth_comps := orth_dec(orth_lat:norm_bd := norm_bd);
@@ -75,7 +75,10 @@ function orth_dec(lat: norm_bd := Infinity())
               // we have found a decomposition
               // unfortunately we need this silly PowerStructure, to stop
               // Magma from deciding that the dimension is part of the type
-              od_ssc := [PowerStructure(ModTupRng)|sub<rs|Basis(i)>: i in orth_dec(sat_sum_comps:norm_bd := norm_bd)];
+              ssc_lat := LatticeWithGram(GramMatrix(sat_sum_comps));
+              od_ssc_lat := orth_dec(ssc_lat:norm_bd := norm_bd);
+              // there is a bit too much back-and-forth here
+              od_ssc := [PowerStructure(ModTupRng)|sub<rs|[&+[v[j]*Basis(sat_sum_comps)[j]: j in [1..Dimension(ssc_lat)]]: v in Basis(i)]>: i in od_ssc_lat];
               rso := sub<rs|orth_sub>;
               orth_comps_lll := Append(od_ssc,rso);
               orth_comps_lat := [sub<lat|[lat|Vector(v)*tolll: v in Basis(c)]>: c in orth_comps_lll];
@@ -105,6 +108,7 @@ function orth_dec(lat: norm_bd := Infinity())
   if norm_bd ge Max(Diagonal(lll)) and not done then
     vprint Lattice, 2: "!!! failed to find orthogonal decomposition";
   end if;
+  assert forall{x: x,y in ret_val|x eq y or forall{a: a in Basis(x), b in Basis(y)|(a,b) eq 0}};
   return ret_val;
 end function;
 
