@@ -103,7 +103,7 @@ function orth_dec(lat: norm_bd := Infinity())
   end for;
 
   if norm_bd ge Max(Diagonal(lll)) and not done then
-    "!!! failed to find orthogonal decomposition";
+    vprint Lattice, 2: "!!! failed to find orthogonal decomposition";
   end if;
   return ret_val;
 end function;
