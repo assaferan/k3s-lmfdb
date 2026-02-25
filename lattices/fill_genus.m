@@ -190,7 +190,14 @@ intrinsic FillGenus(label::MonStgElt : timeout := 1800)
         lat["dual_theta_series"] := "\\N";
         lat["successive_minima"] := "\\N";
         lat["shortest"] := "\\N";
-        gram := LLLGram(GramMatrix(L));
+        // Trying to reduce the size of the entries in the gram matrix
+        gram0 := GramMatrix(L);
+        gram := LLLGram(gram0);
+        max_abs := Max([Abs(x) : x in Eltseq(gram)]);
+        max_abs_0 := Max([Abs(x) : x in Eltseq(gram0)]);
+        if max_abs_0 le max_abs then
+            gram := gram0;
+        end if;
         lat["gram"] := Eltseq(gram);
         lat["gram_is_canonical"] := false;
         lat["gram_others"] := []; // This will be manually set in cases like E8 where we want to store other options
