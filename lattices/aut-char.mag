@@ -33,7 +33,8 @@ aut_lat := aut_char(lat,4); // the first 4 generators give the root lattice
 
 // if the next line is commented out, I get an error when I reload the file
 // if assigned orth_dec then delete orth_dec; end if;
-// import "orth_dec.mag": orth_dec;
+Attach("orth_dec.mag");
+import "orth_dec.mag": orth_dec;
 Z := Integers();
 Q := Rationals();
 
@@ -85,7 +86,7 @@ function lift(lat,autmat: only_one := false)
 
   if nr eq 1 then
     pts := {@x: x in RationalPoints(s), s in schs|forall{i: i in Eltseq(x)|i in Z}@};
-    lifts := [Evaluate(genlift,Eltseq(i)): i in pts];
+    lifts := [GL(dim,Z)|Evaluate(genlift,Eltseq(i)): i in pts];
     assert forall{n: n in lifts|n*g*Transpose(n) eq g} where g is GramMatrix(lat);
     return lifts;
   end if;
@@ -295,24 +296,25 @@ end function;
 
 forward aut_faster;
 
-function aut_max_ind(lat,d: max_ind := 10)
-  if assigned lat`AutomorphismGroup then return lat`AutomorphismGroup; end if;
+function aut_max_ind(lat,d: max_ind := 10, aut_sub := false,force := false)
+  if assigned lat`AutomorphismGroup and not force then return lat`AutomorphismGroup; end if;
+  // this is a bad case because Magma doesn't have GL_0
   if d eq Rank(lat) then return AutomorphismGroup(lat); end if;
   gm := GramMatrix(lat);
   gm_sub := Matrix(d,d,[gm[i,j]: i,j in [1..d]]);
   sublat := LatticeWithGram(gm_sub);
   vprint Lattice,1: "recursively calling to find the automorphism group of the characteristic sublattice";
-  aut_sub := aut_faster(sublat);
+  if aut_sub cmpeq false then aut_sub := aut_faster(sublat); end if;
 
-  ker := lift(lat,Identity(aut_sub));
+  ker := [GL(Rank(lat),Z)!i: i in lift(lat,Identity(aut_sub))];
   vprint Lattice,1: "trying to lift generators";
   lift_gens := [lift(lat,aut_sub.i:only_one): i in [1..Ngens(aut_sub)]];
   if forall{x: x in lift_gens|#x gt 0} then
     vprint Lattice,1: "the whole group lifts";
-    aut_lat := MatrixGroup<Rank(lat),Z|ker cat [x[1]: x in lift_gens]>;
+    aut_lat := MatrixGroup<Rank(lat),Z|ker, [x[1]: x in lift_gens]>;
     assert #aut_lat eq #ker*#aut_sub;
     lat`AutomorphismGroup := aut_lat;
-    return aut_lat;
+    return aut_lat, aut_sub, ker;
   else
     lift_sub := sub<aut_sub|[aut_sub.i: i in [1..Ngens(aut_sub)]|#lift_gens[i] gt 0]>;
     lifts := ker cat [x[1]: x in lift_gens|#x gt 0];
@@ -390,7 +392,7 @@ function aut_max_ind(lat,d: max_ind := 10)
   aut_lat := MatrixGroup<Rank(lat),Z|lifts>;
   assert #aut_lat eq #lift_sub*#ker;
   lat`AutomorphismGroup := aut_lat;
-  return aut_lat;
+  return aut_lat, lift_sub, ker;
 end function;
 
 function aut_orth_dec(od,lat)
@@ -450,6 +452,7 @@ end function;
 
 
 // this is a fairly crude usage of the new function
+// return values are the lattice(s) we decompose into or reduce to
 function aut_faster(lat: use_orth_dec := true, orth_bd := 10)
   if assigned lat`AutomorphismGroup then return lat`AutomorphismGroup; end if;
   if use_orth_dec then
@@ -457,21 +460,22 @@ function aut_faster(lat: use_orth_dec := true, orth_bd := 10)
     assert Determinant(Matrix(&cat [Basis(i): i in od])) in [1,-1];
     if #od gt 1 then 
       lat`AutomorphismGroup := aut_orth_dec(od,lat);
-      return lat`AutomorphismGroup;
+      return lat`AutomorphismGroup, od, #od;
     end if;
   end if;
   
   r := Rank(lat);
   rs := RSpace(Z,r);
   keep := sub<lat|>;
+  thei := 0;
   for i in [1..10] do
     vprint Lattice,2: "looking at sublattice spanned by vectors of norm at most", i;
     sub_rs := Saturation(sub<rs|[Eltseq(x[1]): x in ShortVectors(lat,i)]>);
     sat_sub2 := sub<lat|Basis(sub_rs)>;
-    if r-Rank(sat_sub2) in [1..3] then keep := sat_sub2; end if;
+    if r-Rank(sat_sub2) in [1..3] then keep := sat_sub2; thei := i; end if;
     if r-Rank(sat_sub2) le 1 then break i; end if;
   end for;
-  if Rank(keep) eq 0 then return AutomorphismGroup(lat); end if;
+  if Rank(keep) eq 0 then return AutomorphismGroup(lat), [lat], 0; end if;
   if r-Rank(keep) in [1..3] then 
     // rearrange the lattice to put these first
     // doesn't always work
@@ -483,7 +487,7 @@ function aut_faster(lat: use_orth_dec := true, orth_bd := 10)
     newlat := LatticeWithGram(Matrix(r,r,[(x,y): x,y in bas]));
     vprint Lattice,1: "finding automorphism group by means of sublattice of codimension", r-Rank(keep);
     // naut := aut_char_simple(newlat,Rank(keep));
-    chaut := aut_max_ind(newlat,Rank(keep));
+    chaut := aut_max_ind(newlat,Rank(keep):force);
     naut := chaut^(GL(r,Z)!Matrix(bas));
     lat`AutomorphismGroup := naut;
     // assert forall{i: i in Generators(oldaut)|i*g*Transpose(i) eq g} where g is GramMatrix(lat);
@@ -491,7 +495,98 @@ function aut_faster(lat: use_orth_dec := true, orth_bd := 10)
     vprint Lattice,2: "falling back on Magma's built-in";
     naut := AutomorphismGroup(lat);
   end if;
-  return naut;
+  return naut, [keep], thei;
+end function;
+
+function initial(g)
+  inits := {x: x in Vertices(g)|InDegree(x) eq 0};
+  assert #inits eq 1;
+  init := Rep(inits);
+  return init;
+end function;
+
+// this one is supposed to produce a graph of lattices and their automorphism
+// groups, to be fed to the functions in isom.mag
+
+// I need to document the data type in detail before I forget it
+function aut_graph(lat: hom_up := Eltseq(IdentityMatrix(Z,Rank(lat))), use_orth_dec := true, orth_bd := 10, sub_bd := 10)
+  gr := Digraph<{<lat,hom_up>}|>;
+  used_od := false;
+  if use_orth_dec then
+    od := orth_dec(lat: norm_bd := orth_bd);
+    if #od gt 1 then
+      used_od := true;
+      od_grs := [gr];
+      for i in od do
+        li := LatticeWithGram(GramMatrix(i));
+        ag := aut_graph(li: hom_up := Eltseq(Matrix(Basis(i))), use_orth_dec := use_orth_dec, orth_bd := orth_bd);
+        Append(~od_grs,ag);
+      end for;
+      lat`AutomorphismGroup := aut_orth_dec(od,lat);
+      
+      newgr := Digraph<&join [Support(i): i in od_grs]|>;
+      for i in od_grs, e in EdgeSet(i) do
+        new_e := [rep{v: v in Support(i)|v eq it(e)}: it in [InitialVertex,TerminalVertex]];
+        AddEdge(~newgr,new_e[1],new_e[2],Label(e));
+      end for;
+      for i in od_grs[2..#od_grs] do
+        ii := initial(i);
+        e_ii := [VertexSet(newgr)|<lat,hom_up>,rep{x: x in Support(i)|VertexSet(i)!x eq ii}];
+        AddEdge(~newgr,e_ii[1],e_ii[2],<"orth",Index(od_grs,i)-1>);
+      end for;
+    end if;
+  end if;
+
+  if not used_od then // try to find a sublattice
+    r := Rank(lat);
+    rs := RSpace(Z,r);
+    keep := sub<lat|>;
+    thei := 0;
+    for i in [1..sub_bd] do
+      vprint Lattice,2: "looking at sublattice spanned by vectors of norm at most", i;
+      sub_rs := Saturation(sub<rs|[Eltseq(x[1]): x in ShortVectors(lat,i)]>);
+      sat_sub2 := sub<lat|Basis(sub_rs)>;
+      if Rank(sat_sub2) gt 0 and r-Rank(sat_sub2) in [1..3] then keep := sat_sub2; thei := i; end if;
+      if r-Rank(sat_sub2) le 1 then break i; end if;
+    end for;
+    if Rank(keep) eq 0 then // OK, we give up
+      _ := AutomorphismGroup(lat);
+      newgr := gr;
+    else
+      // this is not enough information; we also want to store the
+      // information of what can be lifted and the kernel
+      latkeep := LatticeWithGram(GramMatrix(keep));
+      lkhom := Eltseq(Matrix(Basis(keep)));
+      lkgr := aut_graph(latkeep: hom_up := Eltseq(lkhom), use_orth_dec := use_orth_dec, orth_bd := orth_bd);
+      new_v := {<lat,hom_up>} join Support(lkgr);
+      newgr := Digraph<new_v|>;
+      for e in EdgeSet(lkgr) do
+        new_e := [rep{x: x in Support(lkgr)|VertexSet(lkgr)!x eq it(e)}: it in [InitialVertex,TerminalVertex]];
+        AddEdge(~newgr,new_e[1],new_e[2],Label(e));
+      end for;
+
+      newbas := Basis(keep);
+      rs := RSpace(Z,Rank(lat),GramMatrix(lat));
+      sub_rs := sub<rs|[Eltseq(i): i in Basis(keep)]>;
+      q,toq := quo<rs|sub_rs>;
+      bas := Basis(keep) cat [lat!Eltseq(i@@toq): i in Basis(q)];
+      basmat := (GL(Rank(lat),Z)!Matrix(bas));
+      assert #bas eq r and sub<lat|bas> eq lat;
+      newlat := LatticeWithGram(Matrix(r,r,[(x,y): x,y in bas]));
+      // now we need to lift the automorphism group from keep to newlat
+      newaut,newlift,newker := aut_max_ind(newlat,Rank(keep): aut_sub := latkeep`AutomorphismGroup,force);
+      naut := newaut^basmat;
+      nker := newker^basmat;
+
+      assert forall{x: x in Generators(naut)|x*g*Transpose(x) eq g} where g is GramMatrix(lat);
+      naut_hom := hom<naut->latkeep`AutomorphismGroup|[Matrix(s,s,[((naut.g)^(basmat^-1))[i,j]: i,j in [1..s]]): g in [1..Ngens(naut)]]> where s is Rank(keep);
+      assert Image(naut_hom) eq newlift;
+      init_e := [VertexSet(newgr)|<lat,hom_up>,<latkeep,lkhom>];
+      AddEdge(~newgr,init_e[1],init_e[2],<"sublat",thei,naut_hom>);
+    end if;
+  end if;
+
+  return newgr;
 end function;
 
 intrinsic AutomorphismGroupFaster(lat::Lat : use_orth_dec := true, orth_bd := 10) -> GrpMat
