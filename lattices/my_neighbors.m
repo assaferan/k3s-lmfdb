@@ -74,6 +74,7 @@ intrinsic newNeighbours(L::Lat, p::RngIntElt :
      if assigned L`AutomorphismGroup then
        Lc`AutomorphismGroup := L`AutomorphismGroup;
      end if;
+     L := Lc;
    end if;
    // require Type(Depth) eq RngIntElt and Depth ge -1:
    //  "Parameter 'Depth' should be a non-negative integer.";
