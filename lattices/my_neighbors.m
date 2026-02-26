@@ -1,6 +1,6 @@
 Z := Integers();
 import !"/Lattice/Lat/neighbors.m":BinaryNeighbors,SetDepth,TwoNeighbors,Adjust,IsNonsingularVector,AdjoinNeighbor;
-Attach("aut-char.mag");
+// Attach("aut-char.mag");
 // import "aut-char.mag":AutomorphismGroupFaster;
 
 // dep now ignored; retained for backward compatibility
