@@ -12,6 +12,7 @@
 // Errors are prefixed with "ERROR: label: ..."
 // Extract retry list: grep '^ERROR:' output.txt | cut -d: -f2 | tr -d ' ' > genera_failed.txt
 
+SetQuitOnError(true);
 AttachSpec("lattices.spec");
 
 if not assigned verbose then verbose := "0"; end if;
