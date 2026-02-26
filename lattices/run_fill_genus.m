@@ -106,7 +106,9 @@ for l in label_list do
 end for;
 
 if #failed gt 0 then
+    printf "DONE: %o failures\n", #failed;
     exit 1;
 end if;
+printf "DONE\n";
 exit 0;
 end procedure();
