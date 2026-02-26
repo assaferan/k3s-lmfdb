@@ -1,11 +1,12 @@
 #!/bin/bash
 # Wrapper around magma run_fill_genus.m that reliably detects failures.
 # Magma segfaults can report exit code 0 over SSH, so we verify that
-# the "DONE" sentinel was printed, which only happens if Magma reaches
-# the end of run_fill_genus.m without crashing.
+# every label that was STARTed also got a DONE or ERROR line.
+# Labels that were started but got neither are reported as segfaults.
 #
-# Usage (single label):
-#   ./run_fill_genus.sh LABEL [VERBOSE] [TIMEOUT]
+# Usage:
+#   ./run_fill_genus.sh LABELS [VERBOSE] [TIMEOUT]
+#   where LABELS is a single label or colon-separated batch
 #
 # Usage with GNU Parallel (use --resume-failed, not --resume):
 #   parallel --sshloginfile servers.txt --joblog jobs.log --eta --resume-failed \
@@ -14,7 +15,7 @@
 
 set -u
 
-label="$1"
+labels="$1"
 verbose="${2:-0}"
 timeout="${3:-60}"
 
@@ -23,17 +24,23 @@ cd "$(dirname "$0")" || exit 1
 tmpout=$(mktemp)
 trap 'rm -f "$tmpout"' EXIT
 
-magma -b labels:="$label" verbose:="$verbose" timeout:="$timeout" done:=1 run_fill_genus.m 2>&1 | tee "$tmpout" | grep -v '^DONE'
+magma -b labels:="$labels" verbose:="$verbose" timeout:="$timeout" done:=1 run_fill_genus.m 2>&1 | tee "$tmpout" | grep -Ev '^(DONE|START): '
 ret=${PIPESTATUS[0]}
+
+# Find labels that were started but never completed (segfaults)
+started=$(grep '^START: ' "$tmpout" | sed 's/^START: //' | sort)
+finished=$(grep -E '^(DONE|ERROR): ' "$tmpout" | sed 's/^[^:]*: //' | sed 's/: .*//' | sort)
+crashed=$(comm -23 <(echo "$started") <(echo "$finished"))
+
+if [ -n "$crashed" ]; then
+    while IFS= read -r l; do
+        echo "ERROR: $l: segfault (no DONE/ERROR sentinel)"
+    done <<< "$crashed"
+    exit 1
+fi
 
 if [ $ret -ne 0 ]; then
     exit $ret
-fi
-
-# Magma segfaults can exit 0 over SSH; check for the sentinel
-if ! grep -q '^DONE' "$tmpout"; then
-    echo "WRAPPER_ERROR: $label: magma exited 0 but no DONE sentinel (likely segfault)" >&2
-    exit 1
 fi
 
 exit 0

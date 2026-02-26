@@ -2,7 +2,7 @@
 // Usage: magma -b label:=foo run_fill_genus.m
 // Batch: magma -b labels:=foo:bar:baz run_fill_genus.m
 // Options: timeout:=N (default 60, seconds per label)
-//          done:=1 (print DONE sentinel on completion, for wrapper scripts)
+//          done:=1 (print DONE sentinel per label, for wrapper scripts)
 //
 // Parallel across servers:
 //   xargs -n 100 < genera_todo.txt | tr ' ' ':' > genera_todo_chunked.txt
@@ -101,8 +101,10 @@ if useorth and #label_list gt 1 then
 end if;
 failed := [];
 for l in label_list do
+    if done then printf "START: %o\n", l; end if;
     try
         FillGenus(l : timeout := timeout, masslimit := masslimit, sizelimit := sizelimit, timelimit := timelimit, adjlimit := adjlimit, perlattice := perlattice, use_orth := useorth, force_orth := forceorth);
+        if done then printf "DONE: %o\n", l; end if;
     catch e
         printf "ERROR: %o: %o\n", l, e;
         Append(~failed, l);
@@ -110,9 +112,7 @@ for l in label_list do
 end for;
 
 if #failed gt 0 then
-    if done then printf "DONE: %o failures\n", #failed; end if;
     exit 1;
 end if;
-if done then printf "DONE\n"; end if;
 exit 0;
 end procedure();
