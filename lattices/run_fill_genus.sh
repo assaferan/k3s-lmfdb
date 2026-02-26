@@ -23,7 +23,7 @@ cd "$(dirname "$0")" || exit 1
 tmpout=$(mktemp)
 trap 'rm -f "$tmpout"' EXIT
 
-magma -b labels:="$label" verbose:="$verbose" timeout:="$timeout" done:=1 run_fill_genus.m 2>&1 | tee "$tmpout"
+magma -b labels:="$label" verbose:="$verbose" timeout:="$timeout" done:=1 run_fill_genus.m 2>&1 | tee "$tmpout" | grep -v '^DONE'
 ret=${PIPESTATUS[0]}
 
 if [ $ret -ne 0 ]; then
