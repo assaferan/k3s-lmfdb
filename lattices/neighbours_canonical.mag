@@ -12,7 +12,7 @@ Attach("my_neighbors.m");
 // OrthogonalDecomposition (cf. my email)
 function root_sub(lat)
   rl := {*Strings()|*};
-  tor := [];
+  tor := [Z|];
   sl := sub<lat|[x[1]: x in ShortVectors(lat,2,2)]>;
   if Rank(sl) eq 0 then od := []; else
     Zn := RSpace(Z,Dimension(lat));
@@ -201,6 +201,8 @@ nb := list_genus(l:nb_fn := newNeighbours,aut_gp_fn := AutomorphismGroupFaster);
 // than necessary.  Eventually I want to allow for improved isomorphism
 // testing, which means carrying some additional information around with
 // the lattices.  Need to think about how to write the code.
+
+// bd := Infinity(); p := 2; done := {@@}; silent := false; aut_gp_fn := AutomorphismGroupFaster; nb_fn := newNeighbours; cf_fn := func<x|CanonicalForm(GramMatrix(x))>; hash := easy_hash; find_canonical := false;
 function list_genus(pd: bd := Infinity(), p := 2, done := {@@}, silent := false, aut_gp_fn := AutomorphismGroupFaster, nb_fn := newNeighbours, cf_fn := func<x|CanonicalForm(GramMatrix(x))>, hash := easy_hash, thorough := true, find_canonical := false)
   if Rank(pd) eq 2 and p eq 2 and IsEven(Determinant(pd)) then
     "warning: cannot run for lattices of rank 2 with even determinant for p = 2";
@@ -229,7 +231,7 @@ function list_genus(pd: bd := Infinity(), p := 2, done := {@@}, silent := false,
     ct +:= 1;
     if not silent then
       if ct mod 100 eq 0 then
-        printf "%o done, %o found, %o left, time taken %o\n", ct, #done, #hashed+#unhashed, Cputime(cp);
+        printf "%o done, %o found, %o left of which %o unhashed, time taken %o\n", ct, #done, #hashed+#unhashed, #unhashed, Cputime(cp);
       else vprintf Genus,2: (#unhashed gt 0 select "+" else "*");
       end if;
     end if;

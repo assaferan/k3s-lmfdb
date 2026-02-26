@@ -92,7 +92,7 @@ function lift(lat,autmat: only_one := false)
   end if;
   
     
-  lifts := [];
+  lifts := [GL(dim,Z)|];
   Qnr := PolynomialRing(Q,nr);
   for s in schs do
     ps := ProjectiveClosure(s);
@@ -126,7 +126,7 @@ function lift(lat,autmat: only_one := false)
       for i in CartesianProduct(short_vecs) do
         p_pt := Scheme(p,[p.(dim*j+k)-i[j,k]: k in [1..dim], j in [1..nr-1]]);
         pts := {@x: x in RationalPoints(p_pt)|forall{i: i in Eltseq(x)|i in Z}@};
-        lifts cat:= [Evaluate(genlift,Eltseq(i)): i in pts];
+        lifts cat:= [GL(dim,Z)!Evaluate(genlift,Eltseq(i)): i in pts];
         if only_one and #lifts gt 0 then break s; end if;
       end for;
 
