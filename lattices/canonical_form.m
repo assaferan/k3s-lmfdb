@@ -218,7 +218,8 @@ function V_best_with_dual(A)
          max := 2*Maximum([#VA[1] : VA in VAs]);
     end while;
     vprintf CanonicalForm, 1 : "Done!\n";
-    sorted := Sort(VAs, func<x,y | #x[1]-#y[1]>);
+    sorted, perm := Sort(VAs, func<x,y | #x[1]-#y[1]>);
+    vprintf CanonicalForm, 3 : "Choosing method %o\n", 1^perm;
     return sorted[1];
 end function;
 
@@ -281,6 +282,7 @@ end function;
 function U_V(A)
     A := ChangeRing(A, Rationals());
     VA, A, is_dual, Td := Explode(V_best_with_dual(A));
+    vprintf CanonicalForm, 4 : "VA is %o\n", VA;
     // VA := V_best(A);
     // This is not really needed, we just keep track of the weights
     // G_A := CompleteGraph(#VA);
@@ -301,6 +303,7 @@ function U_V(A)
     H, U_inv := HermiteForm(QA);
     U := U_inv^(-1);
     assert U*H eq Transpose(Matrix(v));
+    vprintf CanonicalForm, 4 : "U is %o\n", U;
     return U, A, is_dual, Td;
 end function;
 
@@ -345,19 +348,22 @@ intrinsic CanonicalForm(A::AlgMatElt) -> AlgMatElt
     else
       U := Transpose(U)*T;
     end if;
-    
+    vprintf CanonicalForm, 4 : "can_A before sorting is %o\n", can_A;
     diag := Diagonal(can_A);
     Sort(~diag, ~perm);
     P := PermutationMatrix(Integers(), perm);
     U := P*U;
     can_A := P*can_A*Transpose(P);
-    
+    /*
+    vprintf CanonicalForm, 4 : "can_A after sorting, before last LLL is %o\n", can_A;
     assert can_A eq U*A*Transpose(U);
     L, T := LLL(LatticeWithGram(can_A : CheckPositive := false));
     can_A := GramMatrix(L);
     U := T*U;
     assert U*A*Transpose(U) eq can_A;
+    */
     vprintf CanonicalForm, 1 : "Done!\n";
+    vprintf CanonicalForm, 2 : "Canonical form is %o\n", can_A;
     return can_A, U;
 end intrinsic;
 
