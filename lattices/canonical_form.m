@@ -345,13 +345,13 @@ intrinsic CanonicalForm(A::AlgMatElt) -> AlgMatElt
     else
       U := Transpose(U)*T;
     end if;
-    /*
+    
     diag := Diagonal(can_A);
     Sort(~diag, ~perm);
     P := PermutationMatrix(Integers(), perm);
     U := P*U;
     can_A := P*can_A*Transpose(P);
-    */
+    
     assert can_A eq U*A*Transpose(U);
     L, T := LLL(LatticeWithGram(can_A : CheckPositive := false));
     can_A := GramMatrix(L);
