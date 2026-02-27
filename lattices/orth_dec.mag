@@ -65,7 +65,8 @@ function orth_dec(lat: norm_bd := Infinity())
           orth_comps_lat := [sub<lat|[lat|Vector(v)*tolll: v in Basis(c)]>: c in orth_comps_lll];
           assert forall{x: x,y in orth_comps_lat|x eq y or forall{a: a in Basis(x), b in Basis(y)|(a,b) eq 0}};
           assert sub<lat|orth_comps_lat> eq lat;
-          return orth_comps_lat;
+          done := true; ret_val := orth_comps_lat;
+          break l;
         else
           vprint Lattice, 2: "combining", #nonorth_comps, "component"*(#nonorth_comps eq 1 select "" else "s"), "with a new one";
           components := Append([PowerStructure(ModTupRng)|x: x in components|x notin nonorth_comps],sat_comp);
