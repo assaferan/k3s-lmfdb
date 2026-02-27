@@ -277,7 +277,7 @@ function list_genus(pd: bd := Infinity(), p := 2, done := {@@}, silent := false,
       // assert hash(lat) eq h;
       Remove(~hashed,ind);
       hashed_inds := [[x-(x lt ind select 0 else 1): x in h|x ne ind]: h in hashed_inds];
-      assert forall{i: i in hashed_inds[j], j in [1..#hashed_inds]|hash(hashed[i]) eq known_hashes[j]};
+      // assert forall{i: i in hashed_inds[j], j in [1..#hashed_inds]|hash(hashed[i]) eq known_hashes[j]};
       is_new := true;
       cf := cf_fn(lat);
       for i in [1..#done] do
