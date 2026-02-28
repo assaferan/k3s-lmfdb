@@ -481,11 +481,11 @@ function aut_faster(lat: use_orth_dec := true, orth_bd := 10)
     vprint Lattice,2: "looking at sublattice spanned by vectors of norm at most", i;
     sub_rs := Saturation(sub<rs|[Eltseq(x[1]): x in ShortVectors(lat,i)]>);
     sat_sub2 := sub<lat|Basis(sub_rs)>;
-    if r-Rank(sat_sub2) in [1..5] then keep := sat_sub2; thei := i; end if;
+    if r-Rank(sat_sub2) in [1..4] then keep := sat_sub2; thei := i; end if;
     if r-Rank(sat_sub2) le 1 then break i; end if;
   end for;
   if Rank(keep) eq 0 then return AutomorphismGroup(lat), [lat], 0; end if;
-  if r-Rank(keep) in [1..5] then 
+  if r-Rank(keep) in [1..4] then 
     // rearrange the lattice to put these first
     // doesn't always work
     // bas := rep{Basis(keep) cat [lat.i: i in s]:s in Subsets({1..r},r-Rank(keep))|lat eq sub<lat|keep,[lat.i: i in s]>};
@@ -571,7 +571,7 @@ function aut_graph(lat: hom_up := [Eltseq(i): i in Rows(IdentityMatrix(Z,Rank(la
       vprint Lattice,2: "looking at sublattice spanned by vectors of norm at most", i;
       sub_rs := Saturation(sub<rs|[Eltseq(x[1]): x in ShortVectors(lat,i)]>);
       sat_sub2 := sub<lat|Basis(sub_rs)>;
-      if Rank(sat_sub2) gt 0 and r-Rank(sat_sub2) in [1..5] then keep := sat_sub2; thei := i; end if;
+      if Rank(sat_sub2) gt 0 and r-Rank(sat_sub2) in [1..4] then keep := sat_sub2; thei := i; end if;
       if r-Rank(sat_sub2) le 1 then break i; end if;
     end for;
     if Rank(keep) eq 0 then // OK, we give up
