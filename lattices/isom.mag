@@ -24,7 +24,8 @@
 // Example of usage:
 /*
 AttachSpec("lattices.spec");
-load "isom.mag"; // sorry
+Attach("isom.mag"); 
+import "isom.mag":isom_graph;
 import "aut-char.mag":aut_graph;
 
 gram := DiagonalJoin(CartanMatrix("e8e8"),Matrix([[50]]));
@@ -44,8 +45,11 @@ time assert isom_graph(lat_gr,l2);
 
 // This function really should be integrated with the automorphism lift
 // in aut-char.mag, since they do very similar things.
-if assigned solve_quad then delete solve_quad; end if;
+// if assigned solve_quad then delete solve_quad; end if;
 import "aut-char.mag":solve_quad;
+Z := Integers();
+Q := Rationals();
+
 function lift_isom(l1,sl1_bas,l2,sl2,isom_12)
   r := Rank(l1); s := #sl1_bas;
   if r ne Rank(l2) or s ne Rank(sl2) then
@@ -105,14 +109,14 @@ function initial(g)
   return init;
 end function;
 
-obv_different := func<l,m|Genus(l) ne Genus(m)>;
+obv_different := func<l,m|Rank(l) eq Rank(m) and Genus(l) ne Genus(m)>;
 
 function isom_graph(lg1,l2)
   ii := initial(lg1);
   drop_ii := lg1-ii;
   l1 := rep{x[1]: x in Support(lg1)|VertexSet(lg1)!x eq ii};
   if #Vertices(lg1) eq 1 then
-    vprint Lattice,1: "falling back on Magma built-in";
+    vprint Lattice,1: "falling back on Magma built-in for lattice of rank", Rank(l2);
     // remembering to reverse the order
     is_isom,isom := IsIsomorphic(l2,l1);
     if not is_isom then isom := Rows(IdentityMatrix(Z,Rank(l1))); end if;
