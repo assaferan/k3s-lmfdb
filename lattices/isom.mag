@@ -156,13 +156,13 @@ function isom_graph(lg1,l2)
         rk2 := {*Rank(i): i in od2*};
         if rk1 ne rk2 then
           vprint Lattice,2: "genera do not match";
-          is_isom := false; isom := Identity(GL(Rank(l2),Z));
+          is_isom := false; isom := Identity(GL(Rank(l1),Z));
         else
           gen1 := [Genus(i[1]): i in od1_emb];
           gen2 := [Genus(i): i in od2];
           if Multiset(gen1) ne Multiset(gen2) then
             vprint Lattice,2: "genera do not match";
-            is_isom := false; isom := Identity(GL(Rank(l2),Z));
+            is_isom := false; isom := Identity(GL(Rank(l1),Z));
           else
             vprint Lattice,2: "genera match, looking for isomorphisms";
             pairs := []; isoms := [];
