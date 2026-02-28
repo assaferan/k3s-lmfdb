@@ -24,7 +24,8 @@
 // Example of usage:
 /*
 AttachSpec("lattices.spec");
-load "isom.mag"; // sorry
+Attach("isom.mag"); 
+import "isom.mag":isom_graph;
 import "aut-char.mag":aut_graph;
 
 gram := DiagonalJoin(CartanMatrix("e8e8"),Matrix([[50]]));
@@ -44,8 +45,11 @@ time assert isom_graph(lat_gr,l2);
 
 // This function really should be integrated with the automorphism lift
 // in aut-char.mag, since they do very similar things.
-if assigned solve_quad then delete solve_quad; end if;
+// if assigned solve_quad then delete solve_quad; end if;
 import "aut-char.mag":solve_quad;
+Z := Integers();
+Q := Rationals();
+
 function lift_isom(l1,sl1_bas,l2,sl2,isom_12)
   r := Rank(l1); s := #sl1_bas;
   if r ne Rank(l2) or s ne Rank(sl2) then
@@ -105,14 +109,14 @@ function initial(g)
   return init;
 end function;
 
-obv_different := func<l,m|Genus(l) ne Genus(m)>;
+obv_different := func<l,m|Rank(l) eq Rank(m) and Genus(l) ne Genus(m)>;
 
 function isom_graph(lg1,l2)
   ii := initial(lg1);
   drop_ii := lg1-ii;
   l1 := rep{x[1]: x in Support(lg1)|VertexSet(lg1)!x eq ii};
   if #Vertices(lg1) eq 1 then
-    vprint Lattice,1: "falling back on Magma built-in";
+    vprint Lattice,1: "falling back on Magma built-in for lattice of rank", Rank(l2);
     // remembering to reverse the order
     is_isom,isom := IsIsomorphic(l2,l1);
     if not is_isom then isom := Rows(IdentityMatrix(Z,Rank(l1))); end if;
@@ -148,49 +152,56 @@ function isom_graph(lg1,l2)
         od2 := OrthogonalDecompositionFaster(l2: norm_bd := Label(Rep(outs))[2]);
         std_od2 := [LatticeWithGram(GramMatrix(i)): i in od2];
         back_od2 := [func<x|&+[x[j]*Basis(od2[i])[j]: j in [1..Dimension(od2[i])]]>: i in [1..#od2]];
-        gen1 := [Genus(i[1]): i in od1_emb];
-        gen2 := [Genus(i): i in od2];
-        if Multiset(gen1) ne Multiset(gen2) then
+        rk1 := {*Rank(i[1]): i in od1_emb*};
+        rk2 := {*Rank(i): i in od2*};
+        if rk1 ne rk2 then
           vprint Lattice,2: "genera do not match";
-          is_isom := false; isom := Identity(GL(Rank(l2),Z));
+          is_isom := false; isom := Identity(GL(Rank(l1),Z));
         else
-          vprint Lattice,2: "genera match, looking for isomorphisms";
-          pairs := []; isoms := [];
-          for i,j in [1..#od2] do
-            is_isom,isom := isom_graph(cc1[i],std_od2[j]);
-            if is_isom then
-              Append(~pairs,{i,#od2+j});
-              // isomorphisms work the opposite way from what I expect
-              // Append(~isoms,[Eltseq(i): i in Rows(isom^-1)]);
-              Append(~isoms,[Eltseq(i): i in Rows(isom)]);
-            end if;
-            // optional: abort early if we see it can't work
-          end for;
-
-          vprint Lattice,2: "matching";
-          gr_pairs := Graph<{1..2*#od2}|Set(pairs)>;
-          mm := MaximumMatching(gr_pairs);
-          if #mm eq #od2 then
-            // assemble the isomorphisms into a coherent whole
-            vprint Lattice,2: "found enough isomorphisms, combining them";
-            bas_in := &cat [x[2]: x in od1_emb];
-            assert Determinant(Matrix(bas_in)) in [1,-1];
-            bas_out := [];
-            // for each component on one side we take the corresponding one
-            // on the other side and use the recursively found automorphisms
-            // to describe the images of the basis
-            for i in [1..#od2] do
-              imi := rep{j-#od2: j in [#od2+1..2*#od2]|{i,j} in pairs and EdgeSet(gr_pairs)!{i,j} in mm};
-              bas_out cat:= [back_od2[imi](&+[v[i]*Basis(std_od2[imi])[i]: i in [1..Rank(od2[imi])]]): v in isoms[Index(pairs,{i,imi+#od2})]];
-            end for;
-            isom := Matrix(bas_in)^-1*Matrix(bas_out);
-            im_bas1 := [l2|Eltseq(i): i in Rows(isom)];
-            assert forall{i: i,j in [1..Rank(l1)]|(l1.i,l1.j) eq (im_bas1[i],im_bas1[j])};
-            vprint Lattice,2: "succeeded";
-            is_isom := true;
+          gen1 := [Genus(i[1]): i in od1_emb];
+          gen2 := [Genus(i): i in od2];
+          if Multiset(gen1) ne Multiset(gen2) then
+            vprint Lattice,2: "genera do not match";
+            is_isom := false; isom := Identity(GL(Rank(l1),Z));
           else
-            vprint Lattice,2: "failed to match components";
-            is_isom := false; isom := Identity(GL(Rank(l2),Z));
+            vprint Lattice,2: "genera match, looking for isomorphisms";
+            pairs := []; isoms := [];
+            for i,j in [1..#od2] do
+              is_isom,isom := isom_graph(cc1[i],std_od2[j]);
+              if is_isom then
+                Append(~pairs,{i,#od2+j});
+                // isomorphisms work the opposite way from what I expect
+                // Append(~isoms,[Eltseq(i): i in Rows(isom^-1)]);
+                Append(~isoms,[Eltseq(i): i in Rows(isom)]);
+              end if;
+              // optional: abort early if we see it can't work
+            end for;
+
+            vprint Lattice,2: "matching";
+            gr_pairs := Graph<{1..2*#od2}|Set(pairs)>;
+            mm := MaximumMatching(gr_pairs);
+            if #mm eq #od2 then
+              // assemble the isomorphisms into a coherent whole
+              vprint Lattice,2: "found enough isomorphisms, combining them";
+              bas_in := &cat [x[2]: x in od1_emb];
+              assert Determinant(Matrix(bas_in)) in [1,-1];
+              bas_out := [];
+              // for each component on one side we take the corresponding one
+              // on the other side and use the recursively found automorphisms
+              // to describe the images of the basis
+              for i in [1..#od2] do
+                imi := rep{j-#od2: j in [#od2+1..2*#od2]|{i,j} in pairs and EdgeSet(gr_pairs)!{i,j} in mm};
+                bas_out cat:= [back_od2[imi](&+[v[i]*Basis(std_od2[imi])[i]: i in [1..Rank(od2[imi])]]): v in isoms[Index(pairs,{i,imi+#od2})]];
+              end for;
+              isom := Matrix(bas_in)^-1*Matrix(bas_out);
+              im_bas1 := [l2|Eltseq(i): i in Rows(isom)];
+              assert forall{i: i,j in [1..Rank(l1)]|(l1.i,l1.j) eq (im_bas1[i],im_bas1[j])};
+              vprint Lattice,2: "succeeded";
+              is_isom := true;
+            else
+              vprint Lattice,2: "failed to match components";
+              is_isom := false; isom := Identity(GL(Rank(l2),Z));
+            end if;
           end if;
         end if;
       when "sublat":
