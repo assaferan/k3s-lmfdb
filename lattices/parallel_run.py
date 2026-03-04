@@ -22,10 +22,10 @@ for r in ranks:
     for sig in sigs:
         if (12 <= r) and (r <= 20) and (sig[1] in [1,2]):
             max_det = C // (22 - r)
-        intervals = range(1,max_det+1,(max_det+1) // batch_size + 1)
+        intervals = [x for x in range(1,max_det+1,(max_det-1) // (batch_size-1))] + [max_det+1]
         #tasks_sig = [(write_all_of_sig_between_genera_basic, (sig[0], sig[1], intervals[i], intervals[i+1])) for i in range(batch_size)]
         #tasks.append(tasks_sig)
-        inputs_sig = [(sig[0], sig[1], intervals[i]+1, intervals[i+1]) for i in range(batch_size)]
+        inputs_sig = [(sig[0], sig[1], intervals[i], intervals[i+1]-1) for i in range(batch_size)]
         inputs.append(inputs_sig)
 
 all_inputs = reduce(lambda x,y : x+y, inputs)
@@ -35,7 +35,7 @@ start_time = time.time()
 print(f"Starting {total} tasks...")
 
 results = []
-for i, res in enumerate(write_all_of_sig_between_genera_basic(inputs), 1):
+for i, res in enumerate(write_all_of_sig_between_genera_basic(all_inputs), 1):
     results.append(res)
     
     # Calculate progress and ETA
