@@ -7,6 +7,7 @@ from sage.interfaces.magma import magma # type: ignore
 from sage.matrix.constructor import matrix # type: ignore
 from sage.misc.functional import is_even, is_odd # type: ignore
 from sage.misc.misc_c import prod # type: ignore
+from sage.parallel.decorate import parallel # type: ignore
 from sage.quadratic_forms.genera.genus import (
     GenusSymbol_global_ring,
     Genus_Symbol_p_adic_ring,
@@ -818,6 +819,7 @@ def write_all_of_sig_between(n_plus, n_minus, lb_det, ub_det):
         entries = [create_genus_entry(s) for s in syms]
         write_entries_to_file(entries, fname)
 
+@parallel(ncpus=128) # !!! change this according to platform
 def write_all_of_sig_between_genera_basic(n_plus, n_minus, lb_det, ub_det):
     '''
     Create data files with all genera of a certain signature with determinant between lb_det and ub_det,
@@ -825,12 +827,15 @@ def write_all_of_sig_between_genera_basic(n_plus, n_minus, lb_det, ub_det):
     '''
     if not os.path.exists("genera_basic"):
         os.makedirs("genera_basic")
+    folder_name = "genera_basic/sig_%d_%d" % (n_plus, n_minus)
+    if not os.path.exists(folder_name):
+        os.makedirs(folder_name)
     sgn = 1 if is_even(n_minus) else -1;
     for d in range(lb_det, ub_det+1):
         syms = all_genus_symbols(n_plus, n_minus, sgn*d, only_even=False)
         entries = [create_genus_entry(s) for s in syms]
         for genus in entries:
-            fname = "genera_basic/%s" % genus['label']
+            fname = folder_name + "/%s" % genus['label']
             if os.path.exists(fname):
                 os.remove(fname)
             write_entries_to_file([genus], fname)
