@@ -1,8 +1,8 @@
 // function to enumerate a genus using canonical forms
 Z := Integers();
 Q := Rationals();
-/*Attach("aut-char.mag");
-// import "aut-char.mag":AutomorphismGroupFaster;
+/*Attach("aut_char.mag");
+// import "aut_char.mag":AutomorphismGroupFaster;
 Attach("orth_dec.mag");
 // import "orth_dec.mag":OrthogonalComplementFaster;
 // if assigned orth_comp then delete orth_comp; end if;
@@ -12,7 +12,7 @@ Attach("canonical_form.m");
 Attach("my_neighbors.m");
 // import "my_neighbors.m":newNeighbours;*/
 // AttachSpec("lattices.spec");
-import "aut-char.mag":aut_graph;
+import "aut_char.mag":aut_graph;
 import "isom.mag":isom_graph;
 
 // A very quick lattice hash.  This is better with a faster
@@ -204,19 +204,20 @@ SetVerbose("CanonicalForm",2);
 nb := list_genus(l:nb_fn := newNeighbours,aut_gp_fn := AutomorphismGroupFaster);
 */
 
-// Now I will rewrite the function so as not to use the hash function any more
-// than necessary.  Eventually I want to allow for improved isomorphism
-// testing, which means carrying some additional information around with
-// the lattices.  Need to think about how to write the code.
+/*
+import "isom.mag":isom_graph;
+import "aut_char.mag":aut_graph;
+import "neighbours_canonical.mag":root_sub,easy_hash;
 
-// bd := Infinity(); p := 2; done := {@@}; silent := false; aut_gp_fn := AutomorphismGroupFaster; nb_fn := newNeighbours; cf_fn := func<x|CanonicalForm(GramMatrix(x))>; hash := easy_hash; find_canonical := false;
+bd := Infinity(); p := 2; done := {@@}; silent := false; aut_gp_fn := AutomorphismGroupFaster; nb_fn := newNeighbours; cf_fn := func<x|CanonicalForm(GramMatrix(x))>; hash := easy_hash; use_aut_graph := true; find_canonical := false;
+*/
 function list_genus(pd: bd := Infinity(), p := 2, done := {@@}, silent := false, aut_gp_fn := AutomorphismGroupFaster, nb_fn := newNeighbours, cf_fn := func<x|CanonicalForm(GramMatrix(x))>, use_aut_graph := true, hash := easy_hash, thorough := true, find_canonical := false)
   if Rank(pd) eq 2 and p eq 2 and IsEven(Determinant(pd)) then
     "warning: cannot run for lattices of rank 2 with even determinant for p = 2";
-    return {@pd@},[];
-  elif IsEven(Determinant(pd)) and not IsEven(pd) then
+    return {@pd@},[],[],1;
+  elif IsEven(Determinant(pd)) and not IsEven(pd) and p eq 2 then
     "warning: cannot run for odd lattices with even determinant for p = 2";
-    return {@pd@},[];
+    return {@pd@},[],[],1;
   end if;
   
   _ := aut_gp_fn(pd);
@@ -232,11 +233,8 @@ function list_genus(pd: bd := Infinity(), p := 2, done := {@@}, silent := false,
   known_hashes := {@x: x in done_hashes@}; // hashes of the known lattices
   hashed_inds := [[]: i in known_hashes]; // indices of the hashed lattices in found_lattices
   used_hashes := {@@}; // hashes we have tried already, not to reuse too soon
-  if use_aut_graph then
-    aut_graphs := [];
-  else
-    can_forms := []; // I don't think we spend much time comparing them
-  end if;
+  aut_graphs := [];
+  can_forms := []; // I don't think we spend much time comparing them
   hash_ind := 0; 
   while #hashed+#unhashed gt 0 and mass_left gt 0 do
     ct +:= 1;
@@ -254,7 +252,7 @@ function list_genus(pd: bd := Infinity(), p := 2, done := {@@}, silent := false,
       h := hash(lat);
       if h notin known_hashes then
         Include(~done,lat);
-        vprint Genus,2: "adding lattice", #done, "with new hash";
+        vprint Genus,1: "adding lattice", #done, "with new hash";
         Append(~done_hashes,h);
         mass_left -:= 1/#aut_gp_fn(lat);
         if not silent then <<a,b,c> where a,b,c is root_sub(lat),RealField(5)!(mass_left/mass), #lat`AutomorphismGroup>; end if;
@@ -289,7 +287,7 @@ function list_genus(pd: bd := Infinity(), p := 2, done := {@@}, silent := false,
         for i in [1..#done] do
           if done_hashes[i] eq h then
             if not IsDefined(aut_graphs,i) then
-              vprint Genus, 2: "finding new automorphism graph structure";
+              vprint Genus, 2: "creating new automorphism graph structure for hash", hash_ind;
               aut_graphs[i] := aut_graph(done[i]:orth_bd := 6);
             end if;
             if isom_graph(aut_graphs[i],lat) then
@@ -315,14 +313,16 @@ function list_genus(pd: bd := Infinity(), p := 2, done := {@@}, silent := false,
       end if;
       if is_new then
         Include(~done,lat);
-        vprint Genus, 2: "adding lattice", #done, "with existing hash", hash_ind;
+        vprint Genus, 1: "adding lattice", #done, "with existing hash", hash_ind;
         // "hashes matched:", [x: x in [1..#done_hashes]|done_hashes[x] eq h];
-        isom_lat := [x: x in [1..#done-1]|IsIsomorphic(done[x],lat)];
+        // this is debugging code; removed now that we're confident
+        // isom_lat := [x: x in [1..#done-1]|IsIsomorphic(done[x],lat)];
+        isom_lat := [];
         if #isom_lat gt 0 then // this should never happen
           "??? lattice already known";
-          isom_cfs := [can_forms[i]: i in isom_lat];
           "Gram matrices:", [Eltseq(GramMatrix(i)): i in Append([done[x]: x in isom_lat],lat)];
           if not use_aut_graph then
+            isom_cfs := [can_forms[i]: i in isom_lat];
             "canonical forms match:", [cf eq i: i in isom_cfs];
             "already computed canonical forms:", Append(isom_cfs,cf);
             "recomputed canonical forms:", [cf_fn(i): i in Append([done[i]: i in isom_lat],lat)];
@@ -346,10 +346,10 @@ function list_genus(pd: bd := Infinity(), p := 2, done := {@@}, silent := false,
   if mass_left gt 0 then
     "warning: failed to exhaust the genus; try again with larger p";
   end if;
-  return done, done_hashes;
+  return done, done_hashes, use_aut_graph select aut_graphs else can_forms, mass_left;
 end function;
 
-intrinsic GenusRepresentativesFaster(pd::Lat : bd := Infinity(), p := 2, done := {@@}, silent := true, aut_gp_fn := AutomorphismGroupFaster, nb_fn := newNeighbours, cf_fn := func<x|CanonicalForm(GramMatrix(x))>, use_aut_graph := true, hash := easy_hash, thorough := true, find_canonical := false) -> SeqEnum
+intrinsic GenusRepresentativesFaster(pd::Lat : bd := Infinity(), p := 2, done := {@@}, silent := true, aut_gp_fn := AutomorphismGroupFaster, nb_fn := newNeighbours, cf_fn := func<x|CanonicalForm(GramMatrix(x))>, use_aut_graph := true, hash := easy_hash, thorough := true, find_canonical := false) -> SeqEnum, SeqEnum, SeqEnum, FldRatElt
 {Find the representatives of the genus of the lattice pd.}
     return list_genus(pd: bd := bd, p := p, done := done, silent := silent, aut_gp_fn := aut_gp_fn, nb_fn := nb_fn, cf_fn := cf_fn, use_aut_graph := use_aut_graph, hash := hash, thorough := thorough, find_canonical := find_canonical);
 end intrinsic;

@@ -17,7 +17,7 @@ function newTwoNeighbors(L, dep)
   
   G := ChangeRing( AutomorphismGroupFaster(L:orth_bd := 10), GF(2));
   O := LineOrbits(G);
-  vprint Genus: "Number of orbits:", #O;
+  vprint Genus,2: "Number of orbits:", #O;
   TA := 0;
   for o in O do
     v := L ! o[1].1;
