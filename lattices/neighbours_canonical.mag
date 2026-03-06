@@ -204,12 +204,13 @@ SetVerbose("CanonicalForm",2);
 nb := list_genus(l:nb_fn := newNeighbours,aut_gp_fn := AutomorphismGroupFaster);
 */
 
-// Now I will rewrite the function so as not to use the hash function any more
-// than necessary.  Eventually I want to allow for improved isomorphism
-// testing, which means carrying some additional information around with
-// the lattices.  Need to think about how to write the code.
+/*
+import "isom.mag":isom_graph;
+import "aut_char.mag":aut_graph;
+import "neighbours_canonical.mag":root_sub,easy_hash;
 
-// bd := Infinity(); p := 2; done := {@@}; silent := false; aut_gp_fn := AutomorphismGroupFaster; nb_fn := newNeighbours; cf_fn := func<x|CanonicalForm(GramMatrix(x))>; hash := easy_hash; find_canonical := false;
+bd := Infinity(); p := 2; done := {@@}; silent := false; aut_gp_fn := AutomorphismGroupFaster; nb_fn := newNeighbours; cf_fn := func<x|CanonicalForm(GramMatrix(x))>; hash := easy_hash; use_aut_graph := true; find_canonical := false;
+*/
 function list_genus(pd: bd := Infinity(), p := 2, done := {@@}, silent := false, aut_gp_fn := AutomorphismGroupFaster, nb_fn := newNeighbours, cf_fn := func<x|CanonicalForm(GramMatrix(x))>, use_aut_graph := true, hash := easy_hash, thorough := true, find_canonical := false)
   if Rank(pd) eq 2 and p eq 2 and IsEven(Determinant(pd)) then
     "warning: cannot run for lattices of rank 2 with even determinant for p = 2";
@@ -232,11 +233,8 @@ function list_genus(pd: bd := Infinity(), p := 2, done := {@@}, silent := false,
   known_hashes := {@x: x in done_hashes@}; // hashes of the known lattices
   hashed_inds := [[]: i in known_hashes]; // indices of the hashed lattices in found_lattices
   used_hashes := {@@}; // hashes we have tried already, not to reuse too soon
-  if use_aut_graph then
-    aut_graphs := [];
-  else
-    can_forms := []; // I don't think we spend much time comparing them
-  end if;
+  aut_graphs := [];
+  can_forms := []; // I don't think we spend much time comparing them
   hash_ind := 0; 
   while #hashed+#unhashed gt 0 and mass_left gt 0 do
     ct +:= 1;

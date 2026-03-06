@@ -50,6 +50,32 @@ import "aut_char.mag":solve_quad,solve_quad_recursive;
 Z := Integers();
 Q := Rationals();
 
+function discgp(rs)
+  if ISA(Type(rs),Lat) then rs := RSpace(Z,Rank(rs),GramMatrix(rs)); end if;
+  if Rank(rs) eq 0 then
+    return quo<rs|>,[Z|],func<x|Integers(2)!0>,AbelianGroup([]);
+  end if;
+  gm := GramMatrix(rs);
+  gmq := ChangeRing(gm,Q);
+  gmqinv := gmq^-1;
+  den := LCM([Z|Denominator(i): i in Eltseq(gmqinv)]);
+  Zn := AbelianGroup([0: i in Rows(gm)]);
+  sub1 := sub<rs|[Eltseq(den*i): i in Rows(gmqinv)]>;
+  sub2 := sub<sub1|[den*i: i in Basis(rs)]>;
+  dg,dgto := quo<sub1|sub2>;
+  assert #dg eq AbsoluteValue(Determinant(GramMatrix(rs)));
+  ag := AbelianGroup(Moduli(dg));
+  function q(x)
+    xdg := dg!Eltseq(x);
+    xup := xdg@@dgto;
+    pr := Integers(2*den)!((xup,xup)/den);
+    return pr;
+  end function;
+
+  return dg,dgto,q,ag;
+end function;
+
+basic_hash := func<l|Rank(l),Moduli(discgp(l))>;
 // r, s -> n, r
 function lift_isom(l1,sl1_bas,l2,sl2,isom_12)
   n := Rank(l1); r := #sl1_bas;
@@ -160,7 +186,8 @@ function initial(g)
   return init;
 end function;
 
-obv_different := func<l,m|Rank(l) eq Rank(m) and Genus(l) ne Genus(m)>;
+// obv_different := func<l,m|Rank(l) eq Rank(m) and Genus(l) ne Genus(m)>;
+obv_different := func<l,m|basic_hash(l) ne basic_hash(m)>;
 
 function isom_graph(lg1,l2)
   ii := initial(lg1);
@@ -206,12 +233,15 @@ function isom_graph(lg1,l2)
         rk1 := {*Rank(i[1]): i in od1_emb*};
         rk2 := {*Rank(i): i in od2*};
         if rk1 ne rk2 then
-          vprint Lattice,2: "genera do not match";
+          vprint Lattice,2: "ranks do not match";
           is_isom := false; isom := Identity(GL(Rank(l1),Z));
         else
-          gen1 := [Genus(i[1]): i in od1_emb];
-          gen2 := [Genus(i): i in od2];
+          // gen1 := [Genus(i[1]): i in od1_emb];
+          // gen2 := [Genus(i): i in od2];
+          gen1 := [basic_hash(i[1]): i in od1_emb];
+          gen2 := [basic_hash(i): i in od2];
           if Multiset(gen1) ne Multiset(gen2) then
+            printf "%o%o", #gen1,#gen2;
             vprint Lattice,2: "genera do not match";
             is_isom := false; isom := Identity(GL(Rank(l1),Z));
           else
@@ -227,7 +257,7 @@ function isom_graph(lg1,l2)
               end if;
               // optional: abort early if we see it can't work
             end for;
-
+            
             vprint Lattice,2: "matching";
             gr_pairs := Graph<{1..2*#od2}|Set(pairs)>;
             mm := MaximumMatching(gr_pairs);
