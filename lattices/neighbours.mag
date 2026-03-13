@@ -1,6 +1,6 @@
 Z := Integers();
 Q := Rationals();
-load "aut-char.mag";
+load "aut_char.mag";
 
 // A very quick lattice hash.  This is better with a faster
 // OrthogonalDecomposition (cf. my email)
