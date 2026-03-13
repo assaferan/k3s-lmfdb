@@ -46,55 +46,132 @@ time assert isom_graph(lat_gr,l2);
 // This function really should be integrated with the automorphism lift
 // in aut-char.mag, since they do very similar things.
 // if assigned solve_quad then delete solve_quad; end if;
-import "aut-char.mag":solve_quad;
+import "aut_char.mag":solve_quad,solve_quad_recursive;
 Z := Integers();
 Q := Rationals();
 
+function discgp(rs)
+  if ISA(Type(rs),Lat) then rs := RSpace(Z,Rank(rs),GramMatrix(rs)); end if;
+  if Rank(rs) eq 0 then
+    return quo<rs|>,[Z|],func<x|Integers(2)!0>,AbelianGroup([]);
+  end if;
+  gm := GramMatrix(rs);
+  gmq := ChangeRing(gm,Q);
+  gmqinv := gmq^-1;
+  den := LCM([Z|Denominator(i): i in Eltseq(gmqinv)]);
+  Zn := AbelianGroup([0: i in Rows(gm)]);
+  sub1 := sub<rs|[Eltseq(den*i): i in Rows(gmqinv)]>;
+  sub2 := sub<sub1|[den*i: i in Basis(rs)]>;
+  dg,dgto := quo<sub1|sub2>;
+  assert #dg eq AbsoluteValue(Determinant(GramMatrix(rs)));
+  ag := AbelianGroup(Moduli(dg));
+  function q(x)
+    xdg := dg!Eltseq(x);
+    xup := xdg@@dgto;
+    pr := Integers(2*den)!((xup,xup)/den);
+    return pr;
+  end function;
+
+  return dg,dgto,q,ag;
+end function;
+
+basic_hash := func<l|Rank(l),Moduli(discgp(l))>;
+// r, s -> n, r
 function lift_isom(l1,sl1_bas,l2,sl2,isom_12)
-  r := Rank(l1); s := #sl1_bas;
-  if r ne Rank(l2) or s ne Rank(sl2) then
+  n := Rank(l1); r := #sl1_bas;
+  if n ne Rank(l2) or r ne Rank(sl2) then
+    return false, IdentityMatrix(Z,Rank(l1));
+  end if;
+  sl2_bas := [&+[v[i]*sl2.i: i in [1..r]]: v in Rows(isom_12)];
+  assert forall{i: i,j in [1..r]|(sl1_bas[i],sl1_bas[j]) eq (sl2_bas[i],sl2_bas[j])};
+
+  // make new bases
+  rs_l1 := RSpace(Z,n,GramMatrix(l1));
+  q1,toq1 := quo<rs_l1|[Eltseq(l1!i): i in sl1_bas]>;
+  bas_l1 := sl1_bas cat [l1|Eltseq(i@@toq1): i in Basis(q1)];
+  assert Determinant(Matrix(bas_l1)) in [1,-1];
+  new_l1 := LatticeWithGram(Matrix(n,n,[(x,y): x,y in bas_l1]));
+  
+  rs_l2 := RSpace(Z,n,GramMatrix(l2));
+  q2,toq2 := quo<rs_l2|[Eltseq(l2!i): i in sl2_bas]>;
+  bas_l2 := sl2_bas cat [l2|Eltseq(i@@toq2): i in Basis(q2)];
+  assert Determinant(Matrix(bas_l2)) in [1,-1];
+  new_l2 := LatticeWithGram(Matrix(n,n,[(x,y): x,y in bas_l2]));
+
+  im_sols := [Solution(Matrix(bas_l2),i): i in sl2_bas];
+
+  // now we make the scheme of conditions
+  And := AffineSpace(Q,n*(n-r));
+  Qnd := CoordinateRing(And);
+  // I could figure it out myself, or I could get Magma to do it
+  l2_qn := RSpace(Qnd,n,ChangeRing(GramMatrix(new_l2),Qnd));
+  // made sense when it was GramMatrix(l2) in the last line
+  // known_vecs := [l2_qn!Eltseq(i): i in sl2_bas];
+  known_vecs := [l2_qn.i: i in [1..r]];
+  gen_vecs := [&+[Qnd.(i+(j-1)*n)*l2_qn.i: i in [1..n]]: j in [1..n-r]];
+  all_vecs := known_vecs cat gen_vecs;
+  all_eqs := [(all_vecs[i],all_vecs[j])-(bas_l1[i],bas_l1[j]): i in [1..n], j in [r+1..n]|i le j];
+  // equations with both the known things should be 0
+  assert forall{i: i,j in [1..r]|(known_vecs[i],known_vecs[j]) eq (sl1_bas[i],sl1_bas[j])};
+
+  genlift := Matrix(n,n,&cat [Eltseq(i): i in im_sols] cat [And.i: i in [1..n*(n-r)]]);
+  sch := Scheme(And,all_eqs);
+
+  sols := solve_quad_recursive(sch,genlift,n,n-r,new_l1: lat_out := new_l2);
+  if #sols eq 0 then
+    return false, IdentityMatrix(Z,Rank(l1));
+  else
+    chbas := Matrix(bas_l1)^-1*sols[1]*Matrix(bas_l2);
+    assert forall{i: i,j in [1..n]|(l1.i,l1.j) eq (l2!chbas[i],l2!chbas[j])};
+    return true, chbas;
+  end if;
+end function;
+
+function lift_isom_old(l1,sl1_bas,l2,sl2,isom_12)
+  n := Rank(l1); r := #sl1_bas;
+  if n ne Rank(l2) or r ne Rank(sl2) then
     return false, IdentityMatrix(Z,Rank(l1));
   end if;
   
-  rs_l1 := RSpace(Z,r,GramMatrix(l1));
+  rs_l1 := RSpace(Z,n,GramMatrix(l1));
   q1,toq1 := quo<rs_l1|[Eltseq(l1!i): i in sl1_bas]>;
   bas_l1 := sl1_bas cat [l1|Eltseq(i@@toq1): i in Basis(q1)];
   assert Determinant(Matrix(bas_l1)) in [1,-1];
 
   // the elements of the basis of sl1 have to go to the elements of sl2
   // given by the automorphism 
-  im_bas := [&+[v[i]*sl2.i: i in [1..s]]: v in Rows(isom_12)];   
+  im_bas := [&+[v[i]*sl2.i: i in [1..r]]: v in Rows(isom_12)];   
   // now we make the scheme of conditions
-  An := AffineSpace(Q,r*(r-s));
-  Qn := CoordinateRing(An);
+  And := AffineSpace(Q,n*(n-r));
+  Qnd := CoordinateRing(And);
   // I could figure it out myself, or I could get Magma to do it
-  l2_qn := RSpace(Qn,r,ChangeRing(GramMatrix(l2),Qn));
+  l2_qn := RSpace(Qnd,n,ChangeRing(GramMatrix(l2),Qnd));
   known_vecs := [l2_qn!Eltseq(i): i in im_bas];
-  gen_vecs := [&+[Qn.(i+(j-1)*r)*l2_qn.i: i in [1..r]]: j in [1..r-s]];
+  gen_vecs := [&+[Qnd.(i+(j-1)*n)*l2_qn.i: i in [1..n]]: j in [1..n-r]];
   all_vecs := known_vecs cat gen_vecs;
-  all_eqs := [(all_vecs[i],all_vecs[j])-(bas_l1[i],bas_l1[j]): i in [1..r], j in [s+1..r]|i le j];
+  all_eqs := [(all_vecs[i],all_vecs[j])-(bas_l1[i],bas_l1[j]): i in [1..n], j in [r+1..n]|i le j];
   // equations with both the known things should be 0
-  assert forall{i: i,j in [1..s]|(known_vecs[i],known_vecs[j]) eq (sl1_bas[i],sl1_bas[j])};
+  assert forall{i: i,j in [1..r]|(known_vecs[i],known_vecs[j]) eq (sl1_bas[i],sl1_bas[j])};
 
-  Ar := AffineSpace(Q,r);
+  An := AffineSpace(Q,n);
   partials := [[[]]];
-  for i in [1..r-s] do
+  for i in [1..n-r] do
     // Extract the equations and solve recursively
     // Trying to reduce the number of variables runs into irritating
     // nonintegrality issues, but it must be the right way to do things.
-    /* 
-    pcs_ri := [ProjectiveClosure(i): i in schs_ri];
-    rls := [<rl,rlto> where rl,rlto is RemoveLinearRelations(i): i in pcs_ri];
-    arls := [AffinePatch(i[1],1): i in rls];*/
-    eqns_to_i := [x: x in all_eqs|forall{j: j in [i*r+1..r*(r-s)]|Degree(x,j) eq 0}];
-    schs_ri := [Scheme(Ar,[Evaluate(e,&cat p cat [Ar.j: j in [1..r]] cat [0^^(r*(r-s-i))]): e in eqns_to_i]): p in partials[i]];
+
+    // pcs_ri := [ProjectiveClosure(i): i in schs_ri];
+    // rls := [<rl,rlto> where rl,rlto is RemoveLinearRelations(i): i in pcs_ri];
+    // arls := [AffinePatch(i[1],1): i in rls];*/
+    eqns_to_i := [x: x in all_eqs|forall{j: j in [i*n+1..n*(n-r)]|Degree(x,j) eq 0}];
+    schs_ri := [Scheme(An,[Evaluate(e,&cat p cat [An.j: j in [1..n]] cat [0^^(n*(n-r-i))]): e in eqns_to_i]): p in partials[i]];
     quads := [rep{x: x in DefiningPolynomials(s)|Degree(x) eq 2}: s in schs_ri];
     poss := [solve_quad(q): q in quads];
-    posses := [[x: x in poss[i]|Ar!x in schs_ri[i]]: i in [1..#poss]];
+    posses := [[x: x in poss[i]|An!x in schs_ri[i]]: i in [1..#poss]];
     Append(~partials,[Append(partials[i,j],k): k in posses[j], j in [1..#partials[i]]]);
   end for;
-  if #partials[r-s+1] gt 0 then
-    mat := Matrix(bas_l1)^-1*Matrix(im_bas cat [Vector(Z,i): i in partials[r-s+1,1]]);
+  if #partials[n-r+1] gt 0 then
+    mat := Matrix(bas_l1)^-1*Matrix(im_bas cat [Vector(Z,i): i in partials[n-r+1,1]]);
     assert forall{x: x,y in Basis(l1)|(x,y) eq (l2!Eltseq(x*mat),l2!Eltseq(y*mat))};
     return true, mat;
   else
@@ -109,7 +186,8 @@ function initial(g)
   return init;
 end function;
 
-obv_different := func<l,m|Rank(l) eq Rank(m) and Genus(l) ne Genus(m)>;
+// obv_different := func<l,m|Rank(l) eq Rank(m) and Genus(l) ne Genus(m)>;
+obv_different := func<l,m|basic_hash(l) ne basic_hash(m)>;
 
 function isom_graph(lg1,l2)
   ii := initial(lg1);
@@ -155,12 +233,15 @@ function isom_graph(lg1,l2)
         rk1 := {*Rank(i[1]): i in od1_emb*};
         rk2 := {*Rank(i): i in od2*};
         if rk1 ne rk2 then
-          vprint Lattice,2: "genera do not match";
+          vprint Lattice,2: "ranks do not match";
           is_isom := false; isom := Identity(GL(Rank(l1),Z));
         else
-          gen1 := [Genus(i[1]): i in od1_emb];
-          gen2 := [Genus(i): i in od2];
+          // gen1 := [Genus(i[1]): i in od1_emb];
+          // gen2 := [Genus(i): i in od2];
+          gen1 := [basic_hash(i[1]): i in od1_emb];
+          gen2 := [basic_hash(i): i in od2];
           if Multiset(gen1) ne Multiset(gen2) then
+            printf "%o%o", #gen1,#gen2;
             vprint Lattice,2: "genera do not match";
             is_isom := false; isom := Identity(GL(Rank(l1),Z));
           else
@@ -176,7 +257,7 @@ function isom_graph(lg1,l2)
               end if;
               // optional: abort early if we see it can't work
             end for;
-
+            
             vprint Lattice,2: "matching";
             gr_pairs := Graph<{1..2*#od2}|Set(pairs)>;
             mm := MaximumMatching(gr_pairs);

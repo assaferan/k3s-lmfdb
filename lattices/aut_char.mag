@@ -65,6 +65,114 @@ function solve_quad(pol)
   return intpts;
 end function;
 
+// the setup: we have nr variables (n > r) arranged in r blocks of n
+// in each block, we have a quadratic equation in the last r and enough
+// linear equations to eliminate the rest
+// we need all integer solutions
+
+// note that this version doesn't separate 1 and -1
+// in any case, it seems to work, but I need to test it and also look at speed
+// then I still need to integrate with isom.mag
+function solve_quad_recursive(sch,genlift,n,r,lat:only_one := false, lat_out := lat)
+  Anr := AmbientSpace(sch);
+  Qr := PolynomialRing(Q,r);
+  Ar := Spec(Qr);
+  Qn := PolynomialRing(Q,n);
+  An := Spec(Qn);
+  assert Dimension(Anr) eq n*r;
+  if r eq 1 then
+    assert Dimension(sch) le 0;
+    pts := {@x: x in RationalPoints(sch)|forall{i: i in Eltseq(x)|i in Z}@};
+    lifts := [GL(n,Z)|Evaluate(genlift,Eltseq(i)): i in pts];
+  else
+    vprintf Lattice,2: ".";
+    liftseqs := [[[]]];
+    for i in [1..r] do
+      nextlift := [];
+      for j in liftseqs[i] do
+        eqi := [Evaluate(p,j cat [Qn.j: j in [1..n]] cat [0^^(r-i)*n]): p in DefiningPolynomials(sch)|forall{j: j in [i*n+1..n*r]|Degree(p,j) le 0} and p-Determinant(genlift) notin Q];
+        schi := Scheme(An,eqi);
+        pc := ProjectiveClosure(schi);
+        rl,rlto := RemoveLinearRelations(pc);
+        aprl := AffinePatch(rl,1);
+        // <r-i,{*Degree(i): i in DefiningPolynomials(aprl)*}>;
+        assert (Dimension(aprl) eq r-i and {*Degree(i): i in DefiningPolynomials(aprl)*} eq {*2*}) or (Dimension(AmbientSpace(aprl)) eq 0 and Dimension(pc) le 0);
+        if {*Degree(i): i in DefiningPolynomials(aprl)*} eq {*2*} then
+          pts_rl := solve_quad(DefiningPolynomial(aprl));
+          ptspc := [(rl!i)@@rlto: i in pts_rl];
+        else
+          ptspc := RationalPoints(pc);
+        end if;
+        nextlift cat:= [j cat Eltseq(p)[1..n]: p in ptspc|forall{e: e in Eltseq(p)|e in Z}];
+      end for;
+      Append(~liftseqs,nextlift);
+    end for;
+    lifts := [GL(n,Z)|Eltseq(Evaluate(genlift,i)): i in nextlift];
+  end if;
+  assert forall{n: n in lifts|n^-1*GramMatrix(lat)*Transpose(n^-1) eq GramMatrix(lat_out)};
+  return lifts;
+end function;
+
+// (1) make this faster by recursively using previous solutions to
+// constrain new ones
+// (2) integrate with isom.mag
+// (3) test
+
+// this function is now obsolete, since solve_quad_recursive does the
+// same job but better, it seems
+function solve_quad_collection(sch,genlift,n,r,lat:only_one := false)
+  Anr := AmbientSpace(sch);
+  Qr := PolynomialRing(Q,r);
+  assert Dimension(Anr) eq n*r;
+  if r eq 1 then
+    assert Dimension(sch) le 0;
+    pts := {@x: x in RationalPoints(sch)|forall{i: i in Eltseq(x)|i in Z}@};
+    lifts := [GL(n,Z)|Evaluate(genlift,Eltseq(i)): i in pts];
+    assert forall{n: n in lifts|n*g*Transpose(n) eq g} where g is GramMatrix(lat);
+    return lifts;
+  else
+    lifts := [GL(n,Z)|];
+    vprintf Lattice,2: ".";
+    ps := ProjectiveClosure(sch);
+    rl,torl := RemoveLinearRelations(ps);
+    /*pcrl := PrimeComponents(rl);
+    pcps := [i@@map<ps->AmbientSpace(i)|DefiningPolynomials(torl)>: i in pcrl];
+    aps := [AffinePatch(i,1): i in pcps];*/
+    ap := AffinePatch(Scheme(AmbientSpace(rl),EasyBasis(Ideal(rl)))@@map<ps->AmbientSpace(rl)|DefiningPolynomials(torl)>,1);
+    // we do not get a polynomial for the first additional generator
+    // we could find it by an elimination ideal calculation
+    // these polynomials allow us to limit the image of the extra generators
+    // in the quotient by the characteristic sublattice
+    // good_pols := [{x: x in DefiningPolynomials(p)|Degree(x) eq 2 and forall{i: i in [1..dim*nr]|Degree(x,i) eq 0 or i in [dim*k+nr+1..dim*(k+1)]}}: k in [1..nr-1]]; // index error, I think
+    good_pols := [{x: x in DefiningPolynomials(ap)|Degree(x) eq 2 and forall{i: i in [1..n*r]|Degree(x,i) eq 0 or i in [n*(k+1)-r+1..n*(k+1)]}}: k in [1..r-1]];
+    assert forall{i: i in good_pols|#i eq 1};
+    short_pols := [Evaluate(Rep(good_pols[i]),[0: j in [1..n*(i+1)-r]] cat [Qr.j: j in [1..r]] cat [0: j in [n*(i+1)+1..n*r]]): i in [1..r-1]];
+
+    short_sols := [solve_quad(p): p in short_pols];
+    short_vecs := [];
+    for q in [1..r-1] do
+      short_vecs[q] := {PowerSequence(Z)|};
+      for t in short_sols[q] do
+        find_pt := Scheme(ap,[ap.(n*(q+1)-r+i)-t[i]: i in [1..r]]);
+        sv := [-MonomialCoefficient(Basis(EliminationIdeal(Ideal(find_pt),{n*q+i}))[1],1): i in [1..n-r]] cat t;
+        if forall{i: i in sv|i in Z} then Include(~short_vecs[q],sv); end if;
+      end for;
+    end for;
+
+    for i in CartesianProduct(short_vecs) do
+      p_pt := Scheme(ap,[ap.(n*j+k)-i[j,k]: k in [1..n], j in [1..r-1]]);
+      pts := {@x: x in RationalPoints(p_pt)|forall{i: i in Eltseq(x)|i in Z}@};
+      lifts cat:= [GL(n,Z)!Evaluate(genlift,Eltseq(i)): i in pts];
+      if only_one and #lifts gt 0 then break; end if;
+    end for;
+    
+    vprintf Lattice,2: "done\n";
+    assert forall{n: n in lifts|n*g*Transpose(n) eq g} where g is GramMatrix(lat);
+  end if;
+  return lifts;
+end function;
+
+           
 // lift an automorphism
 // conventions: the characteristic sublattice is spanned by the first k
 // vectors, so its Gram matrix is the top left k x k submatrix
@@ -82,6 +190,7 @@ function lift(lat,autmat: only_one := false)
   conds := {@(imelts[i],imelts[j])-GramMatrix(lat)[i,j]: i,j in [1..dim]@};
   det := Determinant(Matrix([[pr.(dim*d+i): i in [1-(nr)..0]]: d in [1..nr]]));
   An := Spec(pr);
+  sch0 := Scheme(An,Setseq(conds));
   schs := [Scheme(An,Setseq(Include(conds,det-i))): i in [1,-1]];
   genlift := VerticalJoin(ChangeRing(HorizontalJoin(autmat,ZeroMatrix(Z,subdim,nr)),pr),Matrix(nr,dim,[pr.i: i in [1..dim*nr]]));
 
@@ -93,15 +202,18 @@ function lift(lat,autmat: only_one := false)
   end if;
   
   vprintf Lattice,2: "searching for points on scheme ";  
-  lifts := [GL(dim,Z)|];
+  // lifts := &cat [solve_quad_collection(s,genlift,dim,nr,lat): s in schs];
+  // lifts := &cat [solve_quad_recursive(s,genlift,dim,nr,lat): s in schs];
+  lifts := solve_quad_recursive(sch0,genlift,dim,nr,lat); // faster?
+  /*lifts := [GL(dim,Z)|];
   Qnr := PolynomialRing(Q,nr);
   for s in schs do
     vprintf Lattice,2: ".";
     ps := ProjectiveClosure(s);
     rl,torl := RemoveLinearRelations(ps);
-    /*pcrl := PrimeComponents(rl);
+    //pcrl := PrimeComponents(rl);
     pcps := [i@@map<ps->AmbientSpace(i)|DefiningPolynomials(torl)>: i in pcrl];
-    aps := [AffinePatch(i,1): i in pcps];*/
+    aps := [AffinePatch(i,1): i in pcps];//
     aps := [AffinePatch(Scheme(AmbientSpace(rl),EasyBasis(Ideal(rl)))@@map<ps->AmbientSpace(rl)|DefiningPolynomials(torl)>,1)];
     for p in aps do
       // we do not get a polynomial for the first additional generator
@@ -134,6 +246,7 @@ function lift(lat,autmat: only_one := false)
 
     end for;
   end for;
+  */
   vprintf Lattice,2: "done\n";
   assert forall{n: n in lifts|n*g*Transpose(n) eq g} where g is GramMatrix(lat);
   return lifts;
@@ -450,7 +563,11 @@ function aut_orth_dec(od,lat)
     assert forall{x: x in aut_gens|x*g*Transpose(x) eq g} where g is GramMatrix(lat);
 
     naut := sub<GL(Rank(lat),Z)|aut_gens>;
-    lat`AutomorphismGroup := naut;
+    if assigned lat`AutomorphismGroup then
+      assert lat`AutomorphismGroup eq naut;
+    else
+      lat`AutomorphismGroup := naut;
+    end if;
     return naut;
 end function;
 
@@ -461,8 +578,10 @@ end function;
 
 
 // this is a fairly crude usage of the new function
+// orth_bd indicates how hard to look for an orthogonal decomposition
+// codim_bd is the bound on how small a characteristic sublattice we can use
 // return values are the lattice(s) we decompose into or reduce to
-function aut_faster(lat: use_orth_dec := true, orth_bd := 10)
+function aut_faster(lat: use_orth_dec := true, orth_bd := 10, codim_bd := 4)
   if assigned lat`AutomorphismGroup then return lat`AutomorphismGroup; end if;
   if use_orth_dec then
     od := OrthogonalDecompositionFaster(lat: norm_bd := orth_bd*(IsEven(lat) select 2 else 1));
@@ -481,11 +600,11 @@ function aut_faster(lat: use_orth_dec := true, orth_bd := 10)
     vprint Lattice,2: "looking at sublattice spanned by vectors of norm at most", i;
     sub_rs := Saturation(sub<rs|[Eltseq(x[1]): x in ShortVectors(lat,i)]>);
     sat_sub2 := sub<lat|Basis(sub_rs)>;
-    if r-Rank(sat_sub2) in [1..4] then keep := sat_sub2; thei := i; end if;
+    if r-Rank(sat_sub2) in [1..codim_bd] then keep := sat_sub2; thei := i; end if;
     if r-Rank(sat_sub2) le 1 then break i; end if;
   end for;
   if Rank(keep) eq 0 then return AutomorphismGroup(lat), [lat], 0; end if;
-  if r-Rank(keep) in [1..4] then 
+  if r-Rank(keep) in [1..codim_bd] then 
     // rearrange the lattice to put these first
     // doesn't always work
     // bas := rep{Basis(keep) cat [lat.i: i in s]:s in Subsets({1..r},r-Rank(keep))|lat eq sub<lat|keep,[lat.i: i in s]>};
@@ -529,7 +648,7 @@ end function;
 // subgroup and the kernel, which we can use to extend isomorphisms from
 // sublattices.
 
-function aut_graph(lat: hom_up := [Eltseq(i): i in Rows(IdentityMatrix(Z,Rank(lat)))], use_orth_dec := true, orth_bd := 10, sub_bd := 10)
+function aut_graph(lat: hom_up := [Eltseq(i): i in Rows(IdentityMatrix(Z,Rank(lat)))], use_orth_dec := true, orth_bd := 10, sub_bd := 10, codim_bd := 4)
   gr := Digraph<{<lat,hom_up>}|>;
   used_od := false;
   if use_orth_dec then
@@ -571,7 +690,7 @@ function aut_graph(lat: hom_up := [Eltseq(i): i in Rows(IdentityMatrix(Z,Rank(la
       vprint Lattice,2: "looking at sublattice spanned by vectors of norm at most", i;
       sub_rs := Saturation(sub<rs|[Eltseq(x[1]): x in ShortVectors(lat,i)]>);
       sat_sub2 := sub<lat|Basis(sub_rs)>;
-      if Rank(sat_sub2) gt 0 and r-Rank(sat_sub2) in [1..4] then keep := sat_sub2; thei := i; end if;
+      if Rank(sat_sub2) gt 0 and r-Rank(sat_sub2) in [1..codim_bd] then keep := sat_sub2; thei := i; end if;
       if r-Rank(sat_sub2) le 1 then break i; end if;
     end for;
     if Rank(keep) eq 0 then // OK, we give up
@@ -605,6 +724,12 @@ function aut_graph(lat: hom_up := [Eltseq(i): i in Rows(IdentityMatrix(Z,Rank(la
       nker := newker^basmat;
 
       assert forall{x: x in Generators(naut)|x*g*Transpose(x) eq g} where g is GramMatrix(lat);
+      if assigned lat`AutomorphismGroup then
+        assert lat`AutomorphismGroup eq naut;
+      else
+        lat`AutomorphismGroup := naut;
+      end if;
+      
       naut_hom := hom<naut->latkeep`AutomorphismGroup|[Matrix(s,s,[((naut.g)^(basmat^-1))[i,j]: i,j in [1..s]]): g in [1..Ngens(naut)]]> where s is Rank(keep);
       assert Image(naut_hom) eq newlift;
       init_e := [VertexSet(newgr)|<lat,hom_up>,<latkeep,lkhom>];
@@ -615,9 +740,9 @@ function aut_graph(lat: hom_up := [Eltseq(i): i in Rows(IdentityMatrix(Z,Rank(la
   return newgr;
 end function;
 
-intrinsic AutomorphismGroupFaster(lat::Lat : use_orth_dec := true, orth_bd := 10) -> GrpMat
+intrinsic AutomorphismGroupFaster(lat::Lat : use_orth_dec := true, orth_bd := 10, codim_bd := 4) -> GrpMat
 { Return the automorphism group of the lattice lat.}
-    return aut_faster(lat: use_orth_dec := use_orth_dec, orth_bd := orth_bd);
+    return aut_faster(lat: use_orth_dec := use_orth_dec, orth_bd := orth_bd, codim_bd := 4);
 end intrinsic;
 
 
