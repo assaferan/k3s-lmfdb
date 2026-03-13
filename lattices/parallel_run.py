@@ -25,7 +25,7 @@ for r in ranks:
         intervals = [x for x in range(1,max_det+1,(max_det-1) // (batch_size-1))] + [max_det+1]
         #tasks_sig = [(write_all_of_sig_between_genera_basic, (sig[0], sig[1], intervals[i], intervals[i+1])) for i in range(batch_size)]
         #tasks.append(tasks_sig)
-        inputs_sig = [(sig[0], sig[1], intervals[i], intervals[i+1]-1) for i in range(batch_size)]
+        inputs_sig = [(sig[0], sig[1], intervals[i], intervals[i+1]-1) for i in range(len(intervals)-1)]
         inputs.append(inputs_sig)
 
 all_inputs = reduce(lambda x,y : x+y, inputs)
