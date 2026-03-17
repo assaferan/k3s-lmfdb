@@ -29,7 +29,14 @@ if not assigned timeout then timeout := "60"; end if;
 timeout := StringToInteger(timeout);
 
 function representatives(label : timeout := 1800, alg := GenusRepresentatives)
-    data := Split(Split(Read("genera_basic/" * label), "\n")[1], "|");
+    label_components := Split(label, ".");
+    n := StringToInteger(label_components[1]);
+    s := StringToInteger(label_components[2]);
+    error if n ne s, "Not positive definite";
+    n_plus := (n + s) div 2;
+    n_minus := (n - s) div 2;
+
+    data := Split(Split(Read(Sprintf("genera_basic/sig_%o_%o/%o", n_plus, n_minus, label)), "\n")[1], "|");
     basic_format := Split(Read("genera_basic.format"), "|");
     assert #data eq #basic_format;
     basics := AssociativeArray();
@@ -53,7 +60,7 @@ function representatives(label : timeout := 1800, alg := GenusRepresentatives)
     
     success, reps, elapsed := TimeoutCall(timeout, alg, <L>, 1);
     if success then
-        printf "Genus representativesfor %o computed in %o seconds\n", label, elapsed;
+        printf "Genus representatives for %o computed in %o seconds\n", label, elapsed;
         reps := reps[1];
         return reps;
     end if;
