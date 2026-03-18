@@ -354,6 +354,7 @@ intrinsic GenusRepresentativesFaster(pd::Lat : bd := Infinity(), p := 2, done :=
     if (IsEven(Determinant(pd)) and not IsEven(pd)) and (p eq 2) then p := 3; end if;
     mass_left := Infinity();
     while (mass_left gt 0) do
+      // tried starting eith the list we already have, but this doesn't seem to work
       reps, done_hashes, cans, mass_left := list_genus(pd: bd := bd, p := p, done := done, silent := silent, aut_gp_fn := aut_gp_fn, nb_fn := nb_fn, cf_fn := cf_fn, use_aut_graph := use_aut_graph, hash := hash, thorough := thorough, find_canonical := find_canonical);
       vprintf Genus, 1: "p = %o, #reps = %o, mass_left = %o\n", p, #reps, RealField(10)!mass_left; 
       p := NextPrime(p);
