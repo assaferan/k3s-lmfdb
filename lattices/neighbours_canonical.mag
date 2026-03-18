@@ -344,7 +344,7 @@ function list_genus(pd: bd := Infinity(), p := 2, done := {@@}, silent := false,
 
   error if mass_left lt 0, "exhausted more mass than exists";
   if mass_left gt 0 then
-    printf "warning: failed to exhaust the genus with p = %d; try again with larger p", p;
+    printf "warning: failed to exhaust the genus with p = %o; try again with larger p\n", p;
   end if;
   return done, done_hashes, use_aut_graph select aut_graphs else can_forms, mass_left;
 end function;
@@ -355,8 +355,10 @@ intrinsic GenusRepresentativesFaster(pd::Lat : bd := Infinity(), p := 2, done :=
     mass_left := Infinity();
     while (mass_left gt 0) do
       done, done_hashes, cans, mass_left := list_genus(pd: bd := bd, p := p, done := done, silent := silent, aut_gp_fn := aut_gp_fn, nb_fn := nb_fn, cf_fn := cf_fn, use_aut_graph := use_aut_graph, hash := hash, thorough := thorough, find_canonical := find_canonical);
+      printf "#done = %o, mass_left = %o\n", #done, RealField(10)!mass_left; 
       p := NextPrime(p);
     end while;
+    return done, done_hashes, cans, mass_left;
 end intrinsic;
 
 // this function now merged with list_genus
