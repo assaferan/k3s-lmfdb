@@ -344,14 +344,19 @@ function list_genus(pd: bd := Infinity(), p := 2, done := {@@}, silent := false,
 
   error if mass_left lt 0, "exhausted more mass than exists";
   if mass_left gt 0 then
-    "warning: failed to exhaust the genus; try again with larger p";
+    printf "warning: failed to exhaust the genus with p = %d; try again with larger p", p;
   end if;
   return done, done_hashes, use_aut_graph select aut_graphs else can_forms, mass_left;
 end function;
 
 intrinsic GenusRepresentativesFaster(pd::Lat : bd := Infinity(), p := 2, done := {@@}, silent := true, aut_gp_fn := AutomorphismGroupFaster, nb_fn := newNeighbours, cf_fn := func<x|CanonicalForm(GramMatrix(x))>, use_aut_graph := true, hash := easy_hash, thorough := true, find_canonical := false) -> SeqEnum, SeqEnum, SeqEnum, FldRatElt
 {Find the representatives of the genus of the lattice pd.}
-    return list_genus(pd: bd := bd, p := p, done := done, silent := silent, aut_gp_fn := aut_gp_fn, nb_fn := nb_fn, cf_fn := cf_fn, use_aut_graph := use_aut_graph, hash := hash, thorough := thorough, find_canonical := find_canonical);
+    if (IsEven(Determinant(pd)) and not IsEven(pd)) and (p eq 2) then p := 3; end if;
+    mass_left := Infinity();
+    while (mass_left gt 0) do
+      done, done_hashes, cans, mass_left := list_genus(pd: bd := bd, p := p, done := done, silent := silent, aut_gp_fn := aut_gp_fn, nb_fn := nb_fn, cf_fn := cf_fn, use_aut_graph := use_aut_graph, hash := hash, thorough := thorough, find_canonical := find_canonical);
+      p := NextPrime(p);
+    end while;
 end intrinsic;
 
 // this function now merged with list_genus
