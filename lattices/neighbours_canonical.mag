@@ -224,19 +224,19 @@ function list_genus(pd: bd := Infinity(), p := 2, done := {@@}, silent := false,
   g := Genus(pd);
   mass := Mass(pd);
   // should probably be indexed sets, but I doubt that takes most of the time
-  hashed := []; unhashed := IsEmpty(done) select [pd] else [x : x in done]; 
+  hashed := [x : x in done]; unhashed := IsEmpty(done) select [pd] else []; 
   rss := [];
   cp := Cputime(); ct := 0;
   // mass_left := mass;
   hashes := []; // hashes of the hashed lattices that may not be new
   done_hashes := [hash(i): i in done];
-  initial_hashes := {@x : x in done_hashes@};
+  unused := [x : x in done];
   known_hashes := {@x: x in done_hashes@}; // hashes of the known lattices
   hashed_inds := [[]: i in known_hashes]; // indices of the hashed lattices in found_lattices
   used_hashes := {@@}; // hashes we have tried already, not to reuse too soon
   aut_graphs := [];
   can_forms := []; // I don't think we spend much time comparing them
-  hash_ind := 0; 
+  hash_ind := #hashed_inds; 
   while #hashed+#unhashed gt 0 and mass_left gt 0 do
     ct +:= 1;
     if not silent then
@@ -262,23 +262,32 @@ function list_genus(pd: bd := Infinity(), p := 2, done := {@@}, silent := false,
         nbs := [LatticeWithGram(GramMatrix(x)): x in nb_fn(lat,p)];
         nbs := [x: x in nbs|x notin hashed and x notin done and x notin unhashed];
         unhashed cat:= nbs;
-      elif h in initial_hashes then
-        nbs := [LatticeWithGram(GramMatrix(x)): x in nb_fn(lat,p)];
-        nbs := [x: x in nbs|x notin hashed and x notin done and x notin unhashed];
-        unhashed cat:= nbs;
       else
         Append(~hashed,lat);
         Append(~hashed_inds[Index(known_hashes,h)],#hashed);
       end if;
-    else // we only have lattices whose hashes we have completed already
-      // this can't loop forever, because there is some lattice left
+    else 
+      orig_hash_ind := hash_ind;
       repeat
+        vprintf Genus, 3: "hash_ind = %o, orig_hash_ind = %o\n", hash_ind, orig_hash_ind;
         hash_ind +:= 1;
         if hash_ind eq #hashed_inds+1 then
           hash_ind := 1;
-          vprint Genus, 1: "starting over from the beginning of the hash list";
+          vprintf Genus, 3: "starting over from the beginning of the hash list, hash_ind = %o, #hashed_inds = %o\n", hash_ind, #hashed_inds;
         end if;
-      until #hashed_inds[hash_ind] gt 0;
+      until (#hashed_inds[hash_ind] gt 0) or (hash_ind eq orig_hash_ind);
+      if (#hashed_inds[hash_ind] eq 0) then // we looped over everything, need to use some of the unused
+        if #unused eq 0 then break; end if; // we have no more lattices we can use
+        ind := Random(1,#unused);
+        lat := unused[ind];
+        // "previously unused lattice", Eltseq(GramMatrix(lat));
+        Remove(~unused,ind);
+        nbs := [LatticeWithGram(GramMatrix(x)): x in nb_fn(lat,p)];
+        nbs := [x: x in nbs|x notin hashed and x notin done and x notin unhashed];
+        unhashed cat:= nbs;
+        vprintf Genus, 3: "adding neighbors of unused to unhashed, #unhashed = %o\n", #unhashed;
+        continue;
+      end if;
       ind := Random(hashed_inds[hash_ind]);
       h := known_hashes[hash_ind];
       lat := hashed[ind];
@@ -361,7 +370,7 @@ intrinsic GenusRepresentativesFaster(pd::Lat : bd := Infinity(), p := 2, done :=
     while (mass_left gt 0) do
       // This could be done better, where at each step we can reuse the hashes we already found, 
       // but at the moment could not make it work, so just updating the mass_left each time.
-      silent := (GetVerbose("Genus") ge 2) select true else false;
+      silent := (GetVerbose("Genus") ge 2) select false else true;
       done, done_hashes, cans, mass_left := list_genus(pd: bd := bd, p := p, done := done, silent := silent, aut_gp_fn := aut_gp_fn, nb_fn := nb_fn, cf_fn := cf_fn, use_aut_graph := use_aut_graph, hash := hash, thorough := thorough, find_canonical := find_canonical, mass_left := mass_left);
       vprintf Genus, 1: "p = %o, #reps = %o, mass_left = %o\n", p, #done, RealField(10)!mass_left; 
       p := NextPrime(p);
