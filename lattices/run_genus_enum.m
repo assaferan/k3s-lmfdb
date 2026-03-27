@@ -24,6 +24,7 @@ if not assigned verbose then verbose := "0"; end if;
 verbose := StringToInteger(verbose);
 SetVerbose("CanonicalForm", verbose);
 SetVerbose("Genus", verbose);
+SetVerbose("Lattice", verbose);
 
 if not assigned timeout then timeout := "60"; end if;
 timeout := StringToInteger(timeout);
@@ -71,7 +72,7 @@ procedure() // forcing magma to read the full input before forking
 failed := [];
 for l in label_list do
     try
-        reps := representatives(l : alg := GenusRepresentativesFaster);
+        reps := representatives(l : timeout := timeout, alg := GenusRepresentativesFaster);
     catch e
         printf "ERROR: %o: %o\n", l, e;
         Append(~failed, l);
