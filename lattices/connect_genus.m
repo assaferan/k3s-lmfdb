@@ -128,8 +128,17 @@ intrinsic LatSortKey(label::MonStgElt) -> Tup
 end intrinsic;
 
 intrinsic AutOrbits(A::GrpMat, vecs::SeqEnum) -> SeqEnum
-{Given an automorphism group and a sequence of vectors (which could be LatElts or ModTupFldElts), return orbit representatives for the action of A on vecs}
-    error, "NotImplemented"; // TODO
+{Given an automorphism group and a sequence of vectors which is invariant under the action of A(which could be LatElts or ModTupFldElts), return orbit representatives for the action of A on vecs}
+    // This assumes A is in GL_n(Z), with respect to the basis of the lattice
+    // created with NaturalAction = false
+    Sn := Sym(#vecs);
+    perms := [Sn![Index(vecs, Coordelt(L,Eltseq(Vector(Coordinates(v))*g)))
+		 : v in vecs] : g in Generators(A)];
+    A_perm := sub<Sn|perms>;
+    orb_reps := OrbitRepresentatives(A_perm);
+    // We throw away the orbit sizes, and replace the index of the
+    // representative by the representative itself
+    return [vecs[o[2]] : o in orb_reps];
 end intrinsic;
 
 intrinsic VoronoiData(L::Lat, A::GrpMat) -> FldRatElt, SeqEnum[ModTupFldElt], RngIntElt, RngIntElt, RngIntElt

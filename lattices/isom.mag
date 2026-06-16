@@ -215,9 +215,11 @@ function isom_graph(lg1,l2)
     vprint Lattice,2: "duplicating";
     for e in EdgeSet(lg1) do
       if e notin outs then
-        i := rep{x: x in [1..#outs]|exists{s: s in scc[x]|VertexSet(lg1)!s eq InitialVertex(e)}};
-        vs := [VertexSet(cc1[i])|rep{s: s in Support(cc1[i])|VertexSet(lg1)!s eq it(e)}: it in [InitialVertex,TerminalVertex]];
-        AddEdge(~cc1[i],vs[1],vs[2],Label(e));
+        inds := {x: x in [1..#outs]|exists{s: s in scc[x]|VertexSet(lg1)!s eq InitialVertex(e)}};
+        for i in inds do
+          vs := [VertexSet(cc1[i])|rep{s: s in Support(cc1[i])|VertexSet(lg1)!s eq it(e)}: it in [InitialVertex,TerminalVertex]];
+          AddEdge(~cc1[i],vs[1],vs[2],Label(e));
+        end for;
       end if;
     end for;
 

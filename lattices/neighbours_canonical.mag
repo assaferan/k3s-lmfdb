@@ -241,8 +241,9 @@ function list_genus(pd: bd := Infinity(), p := 2, done := {@@}, silent := false,
     ct +:= 1;
     if not silent then
       if ct mod 100 eq 0 then
-        printf "%o done, %o found, %o left of which %o unhashed, time taken %o\n", ct, #done, #hashed+#unhashed, #unhashed, Cputime(cp);
-      else vprintf Genus,2: (#unhashed gt 0 select "+" else "*");
+        printf "\n%o done, %o found, %o left of which %o unhashed, time taken %o\n", ct, #done, #hashed+#unhashed, #unhashed, Cputime(cp);
+        vprintf Genus, 1: "mass_left = %o, mass = %o\n", RealField(5)!mass_left, RealField(5)!mass;
+      else vprintf Genus, 1: (#unhashed gt 0 select "+" else "*");
       end if;
     end if;
     if #unhashed gt 0 then
@@ -253,10 +254,13 @@ function list_genus(pd: bd := Infinity(), p := 2, done := {@@}, silent := false,
       h := hash(lat);
       if h notin known_hashes then
         Include(~done,lat);
-        vprint Genus,1: "adding lattice", #done, "with new hash";
+        vprint Genus, 2: "adding lattice", #done, "with new hash";
         Append(~done_hashes,h);
         mass_left -:= 1/#aut_gp_fn(lat);
-        if not silent then <<a,b,c> where a,b,c is root_sub(lat),RealField(5)!(mass_left/mass), #lat`AutomorphismGroup>; end if;
+        vprintf Genus, 2: "mass_left = %o, mass = %o\n", RealField(5)!mass_left, RealField(5)!mass;
+        if not silent then 
+          vprintf Genus, 2: "%o\n", <<a,b,c> where a,b,c is root_sub(lat),RealField(5)!(mass_left/mass), #lat`AutomorphismGroup>; 
+        end if;
         Include(~known_hashes,h);
         Append(~hashed_inds,[]);
         nbs := [LatticeWithGram(GramMatrix(x)): x in nb_fn(lat,p)];
@@ -327,7 +331,7 @@ function list_genus(pd: bd := Infinity(), p := 2, done := {@@}, silent := false,
       end if;
       if is_new then
         Include(~done,lat);
-        vprint Genus, 1: "adding lattice", #done, "with existing hash", hash_ind;
+        vprint Genus, 1: "\nadding lattice", #done, "with existing hash", hash_ind;
         // "hashes matched:", [x: x in [1..#done_hashes]|done_hashes[x] eq h];
         // this is debugging code; removed now that we're confident
         // isom_lat := [x: x in [1..#done-1]|IsIsomorphic(done[x],lat)];
@@ -348,7 +352,9 @@ function list_genus(pd: bd := Infinity(), p := 2, done := {@@}, silent := false,
         
         Append(~done_hashes,h);
         mass_left -:= 1/#aut_gp_fn(lat);
-        if not silent then <<a,b,c> where a,b,c is root_sub(lat),RealField(5)!(mass_left/mass), #lat`AutomorphismGroup>; end if;
+        if not silent then 
+          vprintf Genus, 2: "%o\n", <<a,b,c> where a,b,c is root_sub(lat),RealField(5)!(mass_left/mass), #lat`AutomorphismGroup>; 
+        end if;
         nbs := [LatticeWithGram(GramMatrix(x)): x in nb_fn(lat,p)];
         nbs := [x: x in nbs|x notin hashed and x notin done and x notin unhashed];
         unhashed cat:= nbs;
@@ -370,9 +376,9 @@ intrinsic GenusRepresentativesFaster(pd::Lat : bd := Infinity(), p := 2, done :=
     while (mass_left gt 0) do
       // This could be done better, where at each step we can reuse the hashes we already found, 
       // but at the moment could not make it work, so just updating the mass_left each time.
-      silent := (GetVerbose("Genus") ge 2) select false else true;
+      silent := (GetVerbose("Genus") ge 1) select false else true;
       done, done_hashes, cans, mass_left := list_genus(pd: bd := bd, p := p, done := done, silent := silent, aut_gp_fn := aut_gp_fn, nb_fn := nb_fn, cf_fn := cf_fn, use_aut_graph := use_aut_graph, hash := hash, thorough := thorough, find_canonical := find_canonical, mass_left := mass_left);
-      vprintf Genus, 1: "p = %o, #reps = %o, mass_left = %o\n", p, #done, RealField(10)!mass_left; 
+      vprintf Genus, 1: "p = %o, #reps = %o, mass_left = %o\n", p, #done, RealField(5)!mass_left; 
       p := NextPrime(p);
     end while;
     return done, done_hashes, cans, mass_left;

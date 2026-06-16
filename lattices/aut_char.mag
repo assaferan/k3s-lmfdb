@@ -82,7 +82,7 @@ function solve_quad_recursive(sch,genlift,n,r,lat:only_one := false, lat_out := 
   assert Dimension(Anr) eq n*r;
   if r eq 1 then
     assert Dimension(sch) le 0;
-    pts := {@x: x in RationalPoints(sch)|forall{i: i in Eltseq(x)|i in Z}@};
+    pts := {@x: x in RationalPoints(sch)|forall{i: i in Eltseq(x)|i in Z} and x[#Eltseq(x)] in {-1,1} @};
     lifts := [GL(n,Z)|Evaluate(genlift,Eltseq(i)): i in pts];
   else
     vprintf Lattice,2: ".";
