@@ -13,7 +13,7 @@ intrinsic ThetaHash(theta_series::SeqEnum[RngIntElt], genus_hash::RngIntElt, pre
 {Combines the hash of the genus with the truncation of the theta series with precision prec}
     // Note: should handle cases where theta_series has length less than prec (trailing zeros)
     // and more than prec (truncate)
-    error, "NotImplemented"; // TODO
+    return CollapseIntList([genus_hash] cat theta_series[1..Min(prec,#theta_series)] cat [0 : _ in [1..prec-#theta_series]]);
 end intrinsic;
 
 intrinsic BVHash(L::Lat, genus_hash::RngIntElt, m::RngIntElt) -> RngIntElt
