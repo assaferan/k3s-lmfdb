@@ -1,12 +1,20 @@
-intrinsic GetTraceBound(r::RngIntElt, N::RngIntElt) -> RngIntElt
+intrinsic GetThetaBound(r::RngIntElt, N::RngIntElt, D::RngIntElt) -> RngIntElt
 {Get a precomputed trace bound from a file for theta series of lattices with rank r and level N}
-    error, "NotImplemented"; // TODO
+    X := DirichletGroupFull(IsEven(r) select N else 4*N);
+    k := r div 2;
+    Dstar := (-1)^k * D;
+    chi := X!KroneckerCharacter(Dstar);
+    return Dimension(ModularForms(chi, k));
+end intrinsic;
+
+intrinsic HashGenus(G::SymGen) -> RngIntElt
+{Compute the hash value associated to the genus of the given lattice}
+    return CollapseIntList(StringToBytes(ConwaySymbol(G)));
 end intrinsic;
 
 intrinsic HashGenus(L::Lat) -> RngIntElt
 {Compute the hash value associated to the genus of the given lattice}
-    // Note: should also work for indefinite genera
-    error, "NotImplemented"; // TODO
+    return Hash(Genus(L));
 end intrinsic;
 
 intrinsic ThetaHash(theta_series::SeqEnum[RngIntElt], genus_hash::RngIntElt, prec::RngIntElt) -> RngIntElt
@@ -63,7 +71,7 @@ end function;
 intrinsic SetHashes(~lats::SeqEnum[Assoc], ~genus::Assoc, theta_elapsed::Assoc, timeout::RngIntElt)
 {Set hash values and theta distinguishing information}
     L0 := lats[1]["lattice"];
-    genus_hash := HashGenus(L0); // TODO: could have problems if gram is too big to store in shortint[] so we're using gram_others.
+    genus_hash := HashGenus(Genus(L0)); // TODO: could have problems if gram is too big to store in shortint[] so we're using gram_others.
     genus["genus_hash"] := genus_hash;
 
     rank := lats[1]["rank"];
@@ -81,6 +89,7 @@ intrinsic SetHashes(~lats::SeqEnum[Assoc], ~genus::Assoc, theta_elapsed::Assoc, 
         return;
     end if;
     level := lats[1]["level"];
+    det := lats[1]["det"];
 
     thetas := Sort([<lat["theta_series"], lat["theta_prec"]> : lat in lats]);
     dprec := 0;
@@ -104,7 +113,7 @@ intrinsic SetHashes(~lats::SeqEnum[Assoc], ~genus::Assoc, theta_elapsed::Assoc, 
     genus["theta_distinguishing_prec"] := dprec;
     if distinguished then
         genus["is_theta_distinguished"] := true;
-    elif dprec ge GetTraceBound(rank, level) then
+    elif dprec ge GetThetaBound(rank, level, det) then
         genus["is_theta_distinugished"] := false;
     else
         genus["is_theta_distinugished"] := "\\N";
