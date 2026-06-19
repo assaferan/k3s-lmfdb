@@ -290,7 +290,8 @@ If it is, return the (exact, rational) eutaxy coefficients in the same order as 
 end intrinsic;
 
 intrinsic tDesign(L::Lat, S::SeqEnum) -> RngIntElt
-{Given the sequence S of shortest vectors in a lattice, find the largest even integer t such that S is a spherical t-design (sum over s in S of (x.s)^t = C * x.x^(t/2) for some C, which must be (min(L) #S)/n).}
+{Given the sequence S of shortest vectors in a lattice, find the largest even integer t such that S is a spherical t-design 
+(sum over s in S of (x.s)^t = C * x.x^(t/2) for some C, which must be (min(L) #S)/n).}
     return "\\N"; // TODO
 end intrinsic;
 
@@ -452,7 +453,8 @@ intrinsic ConnectGenus(label::MonStgElt : timeout := 1800)
 
         sv2 := ShortVectors(L, 1, 2);
         R := sub<L|[x[1] : x in sv2]>;
-        lat["root_sublattice"] := RootString(R); // TODO (Eran)
+        lat["root_sublattice"] := RootString(R);
+    
         if Rank(R) eq 0 or Rank(R) eq n then
             lat["root_complement"] := "\\N";
         else

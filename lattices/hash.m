@@ -63,7 +63,7 @@ function FirstDiff(f1, f2, M)
     return M;
 end function;
 
-function PickBest(hash_opts::SeqEnum[Tup])
+function PickBest(hash_opts)
     // Given a sequence of triples <-distinguished, total_time, func_name>, pick the best
     // For now we just sort and take the first, but perhaps we should balance time and number of distinguished lattices rather than sorting lexicographically
     return Minimum(hash_opts);
