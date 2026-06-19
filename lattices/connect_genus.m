@@ -1,5 +1,6 @@
 
 intrinsic GramStringToLat(s::MonStgElt, n::RngIntElt) -> Lat
+{}
     gram := "[" * s[2..#s-1] * "]"; // Switch to square brackets
     gram := Matrix(Rationals(), n, eval gram);
     return LatticeWithGram(gram : CheckPositive := false);
@@ -172,7 +173,7 @@ intrinsic IsEutactic(L::Lat, S::SeqEnum) -> BoolElt
 end intrinsic;
 
 intrinsic tDesign(L::Lat, S::SeqEnum) -> RngIntElt
-{Given the sequence S of shortest vectors in a lattice, find the largest even integer t such that S is a spherical t-design (sum_{s in S} (x.s)^t = C * x.x^(t/2) for some C, which must be (min(L) #S)/n).}
+{Given the sequence S of shortest vectors in a lattice, find the largest even integer t such that S is a spherical t-design (sum_(s in S) (x.s)^t = C * x.x^(t/2) for some C, which must be (min(L) #S)/n).}
     return "\\N"; // TODO (Eran)
 end intrinsic;
 

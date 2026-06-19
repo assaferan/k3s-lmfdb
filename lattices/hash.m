@@ -45,7 +45,7 @@ intrinsic HashLat(L::Lat, genus_hash::RngIntElt, hash_func::MonStgElt) -> RngInt
     elif code eq "BV" then
         return BVHash(L, genus_hash, m);
     else
-        error, Sprintf("Invalid hash code %o", hash_func);
+        error Sprintf("Invalid hash code %o", hash_func);
     end if;
 end intrinsic;
 
@@ -63,7 +63,7 @@ function FirstDiff(f1, f2, M)
     return M;
 end function;
 
-function PickBest(hash_opts::SeqEnum[Tup])
+function PickBest(hash_opts)
     // Given a sequence of triples <-distinguished, total_time, func_name>, pick the best
     // For now we just sort and take the first, but perhaps we should balance time and number of distinguished lattices rather than sorting lexicographically
     return Minimum(hash_opts);
@@ -165,7 +165,7 @@ intrinsic SetHashes(~lats::SeqEnum[Assoc], ~genus::Assoc, theta_elapsed::Assoc, 
     elif code eq "Th" then
         vals := [ThetaHash(lat["theta_series"], genus_hash, m) : lat in lats];
     else
-        error, "Invalid hash code";
+        error "Invalid hash code";
     end if;
 
     for i in [1..#lats] do
