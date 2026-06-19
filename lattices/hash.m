@@ -26,7 +26,7 @@ end intrinsic;
 
 intrinsic BVHash(L::Lat, genus_hash::RngIntElt, m::RngIntElt) -> RngIntElt
 {Combines the hash of the genus with a BV hash of vectors of norm at most m}
-    error, "NotImplemented"; // TODO
+    error "NotImplemented"; // TODO
 end intrinsic;
 
 intrinsic BVhashes(lattices::SeqEnum[Lat], genus_hash::RngIntElt, m::RngIntElt) -> SeqEnum[RngIntElt]
@@ -44,7 +44,7 @@ intrinsic HashLat(L::Lat, genus_hash::RngIntElt, hash_func::MonStgElt) -> RngInt
     elif code eq "BV" then
         return BVHash(L, genus_hash, m);
     else
-        error, Sprintf("Invalid hash code %o", hash_func);
+        error Sprintf("Invalid hash code %o", hash_func);
     end if;
 end intrinsic;
 
@@ -164,7 +164,7 @@ intrinsic SetHashes(~lats::SeqEnum[Assoc], ~genus::Assoc, theta_elapsed::Assoc, 
     elif code eq "Th" then
         vals := [ThetaHash(lat["theta_series"], genus_hash, m) : lat in lats];
     else
-        error, "Invalid hash code";
+        error "Invalid hash code";
     end if;
 
     for i in [1..#lats] do

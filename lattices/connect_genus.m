@@ -379,16 +379,18 @@ intrinsic ConnectGenus(label::MonStgElt : timeout := 1800)
                 lat["covering_norm"], lat["deep_holes"], lat["deep_hole_count"], lat["deep_hole_orbit_count"], lat["hole_count"] := Explode(vdat); // TODO: covering norm can be rational; need to update schema and saving process
             end if;
 
-            // success, S, elapsed := TimeoutCall(timeout, ShortestVectors, <L>, 1); // TODO
-            success := false;
-            if success then
+            has_sv, S, elapsed := TimeoutCall(timeout, ShortestVectors, <L>, 1); 
+            if has_sv then
                 S := S[1];
                 TimeoutAssign(~lat, "shortest", AutOrbits, <aut_group, S>, timeout);
                 TimeoutAssign(~lat, "is_well_rounded", IsWellRounded, <L, S>, timeout);
                 TimeoutAssign(~lat, "is_minimal_vector_generated", IsMinimalVectorGenerated, <L, S>, timeout);
                 TimeoutAssign(~lat, "is_strongly_well_rounded", IsStronglyWellRounded, <L, S>, timeout);
-                TimeoutAssign(~lat, "is_eutactic", IsEutactic, <L, S>, timeout);
-                TimeoutAssign(~lat, "is_strongly_eutactic", IsStronglyEutactic, <L, S>, timeout);
+                has_eutaxy, eutaxy_data, elapsed := TimeoutCall(timeout, IsEutactic, <L, S>, 2);
+                if has_eutaxy then
+                    lat["is_eutactic"], eutaxy := Explode(eutaxy_data);
+                    lat["is_strongly_eutactic"] := lat["is_eutactic"] and (#Set(eutaxy) eq 1);
+                end if;
                 TimeoutAssign(~lat, "t_design", tDesign, <L, S>, timeout);
                 TimeoutAssign(~lat, "perfection_defect", PerfectionDefect, <L, S>, timeout);
                 if lat["perfection_defect"] cmpeq "\\N" then
