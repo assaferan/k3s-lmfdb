@@ -128,8 +128,8 @@ intrinsic LatSortKey(label::MonStgElt) -> Tup
     return <StringToInteger(pieces[1]), -StringToInteger(pieces[2]), StringToInteger(pieces[3]), label>;
 end intrinsic;
 
-intrinsic AutOrbits(A::GrpMat, vecs::SeqEnum) -> SeqEnum
-{Given an automorphism group and a sequence of vectors which is invariant under the action of A(which could be LatElts or ModTupFldElts), return orbit representatives for the action of A on vecs}
+intrinsic AutOrbits(L::Lat, A::GrpMat, vecs::SeqEnum) -> SeqEnum
+{Given a lattice L, an automorphism group A of L and a sequence of vectors which is invariant under the action of A (which could be LatElts or ModTupFldElts), return orbit representatives for the action of A on vecs}
     // This assumes A is in GL_n(Z), with respect to the basis of the lattice
     // created with NaturalAction = false
     Sn := Sym(#vecs);
@@ -148,7 +148,7 @@ intrinsic VoronoiData(L::Lat, A::GrpMat) -> FldRatElt, SeqEnum[ModTupFldElt], Rn
     cnn := Numerator(cn);
     cnd := Denominator(cn);
     dh := DeepHoles(L);
-    reps := AutOrbits(A, dh);
+    reps := AutOrbits(L, A, dh);
     return cnn, cnd, reps, #dh, #reps, #Holes(L);
 end intrinsic;
 
@@ -246,7 +246,22 @@ If it is, return the (exact, rational) eutaxy coefficients in the same order as 
     // modelled as differences of nonnegative ones.  The optimum is finite because
     // the kernel meets the nonnegative orthant only at 0: a positive relation among
     // the rank-one positive-semidefinite matrices u_s^t u_s would force every u_s=0.
-    R := RealField(30);
+
+    // The decision is exact: t* is rational with denominator at most Dbound (an
+    // input-derived Hadamard bound -- an optimal vertex of the (m+1)-variable LP
+    // solves a square integer subsystem whose determinant bounds the denominator),
+    // so a positive t* is at least 1/Dbound.  We therefore take the working
+    // precision, the decision threshold tau and the certificate denominator all
+    // from Dbound rather than from fixed constants.  A is integral; clearing the
+    // denominators of b leaves every constraint coefficient an integer of size at
+    // most Mm, whence any (m+1)-square subdeterminant is at most (sqrt(m+1)*Mm)^(m+1).
+    Db := Lcm([ Denominator(x) : x in Eltseq(b) ] cat [1]);
+    Mm := Integers() ! Max([ Abs(x) : x in Eltseq(A) ]
+                           cat [ Abs(x*Db) : x in Eltseq(b) ] cat [Db, 1]);
+    Dbound := Mm^(m+1) * (m+1)^((m+1) div 2 + 1);
+    tau := 1/(2*Dbound);
+    R := RealField(Ceiling(Log(10, 2*Dbound)) + 30);   // +30 guard digits for LP roundoff
+
     nv := 2*d + 2;                          // p_1..p_d, q_1..q_d, tp, tn
     rows := [];  rhs := [];
     for i in [1..m] do
@@ -267,25 +282,18 @@ If it is, return the (exact, rational) eutaxy coefficients in the same order as 
     SetMaximiseFunction(LP, true);
     v := Eltseq(Solution(LP));
     tstar := v[2*d+1] - v[2*d+2];
-    if tstar le 10^-9 then
-        return false, [];                    // best solution is on the boundary (semi-eutactic at most)
+    if tstar le R ! tau then
+        return false, [];                    // t* <= 0 (any positive t* would exceed tau)
     end if;
 
-    // t* > 0: a strictly positive solution exists.  Recover an exact rational one
-    // from the floating-point optimum and verify its positivity, so the YES answer
-    // (and the returned coefficients) are certified exactly.  Any c in sol + <K>
-    // automatically satisfies c*A = b.
-    for den in [10^6, 10^9, 10^12] do
-        lam := sol;
-        for j in [1..d] do
-            lam +:= BestApproximation(v[j] - v[d+j], den) * Vector(Rationals(), Eltseq(K[j]));
-        end for;
-        if &and[ lam[i] gt 0 : i in [1..m] ] then
-            return true, Eltseq(lam);
-        end if;
+    // t* > 0: a strictly positive solution exists.  Recover the exact rational one
+    // (its denominator is at most Dbound) and verify its positivity, so the YES
+    // answer and the returned coefficients are certified exactly.  Any c in
+    // sol + <K> automatically satisfies c*A = b.
+    lam := sol;
+    for j in [1..d] do
+        lam +:= BestApproximation(v[j] - v[d+j], Dbound) * Vector(Rationals(), Eltseq(K[j]));
     end for;
-    // Strictly feasible per the LP but rounding landed on the boundary; report
-    // eutactic with the (approximate) coefficients from the last attempt.
     return true, Eltseq(lam);
 end intrinsic;
 
@@ -393,7 +401,7 @@ intrinsic ConnectGenus(label::MonStgElt : timeout := 1800)
             has_sv, S, elapsed := TimeoutCall(timeout, ShortestVectors, <L>, 1); 
             if has_sv then
                 S := S[1];
-                TimeoutAssign(~lat, "shortest", AutOrbits, <aut_group, S>, timeout);
+                TimeoutAssign(~lat, "shortest", AutOrbits, <L, aut_group, S>, timeout);
                 TimeoutAssign(~lat, "is_well_rounded", IsWellRounded, <L, S>, timeout);
                 TimeoutAssign(~lat, "is_minimal_vector_generated", IsMinimalVectorGenerated, <L, S>, timeout);
                 TimeoutAssign(~lat, "is_strongly_well_rounded", IsStronglyWellRounded, <L, S>, timeout);
