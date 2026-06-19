@@ -448,7 +448,7 @@ intrinsic ConnectGenus(label::MonStgElt : timeout := 1800)
         if Rank(R1) eq 0 or Rank(R1) eq n then
             lat["norm1_complement"] := "\\N";
         else
-            lat["norm1_complement"] := FindLabel(OrthogonalComplementFaster(L, R1)); // TODO (Eran): Make OrthogonalComplementFaster work for lattices
+            lat["norm1_complement"] := FindLabel(OrthogonalComplementFaster(L, R1));
         end if;
 
         sv2 := ShortVectors(L, 1, 2);
