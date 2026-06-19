@@ -164,6 +164,24 @@ function harmonic_Molien_dims(G, prec)
     return [ Integers()!Coefficient(h, k) : k in [0..prec] ];   // dims[k+1] = dim H_k^G
 end function;
 
+// Aut-invariant degree-k G-harmonics. Uses the RIGHT action P(c*g)=P(c),
+// matching how Magma's automorphisms move lattice coordinates (c -> c*g).
+function GHarmonics_invariant(G, Ginv, n, k)
+    R := PolynomialRing(Rationals(), n);
+    H := GHarmonics(Ginv, n, k);  d := #H;
+    if d eq 0 then return H; end if;
+    mons := MonomialsOfDegree(R, k);
+    Hmat := Matrix([ [ MonomialCoefficient(P, mn) : mn in mons ] : P in H ]);
+    fixed := VectorSpace(Rationals(), d);
+    for s in Generators(G) do
+        subst := [ &+[ R | s[i,j]*R.i : i in [1..n] ] : j in [1..n] ];   // y_j -> (y*s)_j
+        Img := Matrix([ [ MonomialCoefficient(Evaluate(P, subst), mn) : mn in mons ] : P in H ]);
+        Ms  := Solution(Hmat, Img);                                      // Ms*Hmat = Img
+        fixed := fixed meet Kernel(Ms - IdentityMatrix(Rationals(), d));
+    end for;
+    return [ &+[ R | a[i]*H[i] : i in [1..d] ] : a in Basis(fixed) ];
+end function;
+
 // Here, G is the automorphism group of L
 function universal_design_strength(L, G : MaxDegree := 30)
     dims := harmonic_Molien_dims(G, MaxDegree);
@@ -182,17 +200,59 @@ function universal_design_strength(L, G : MaxDegree := 30)
     return k0-1;
 end function;
 
-intrinsic tDesign(L::Lat, S::SeqEnum) -> RngIntElt
+//  Molien dims say *where* invariant harmonics live; only there do we build the
+//  (few) invariants and touch the shell. Degrees with no invariants are designs
+//  for free. Needs Aut(L); pass a precomputed group via Aut:= to avoid recomputing.
+function shell_design_strength_Molien(L, H, A : MaxDegree := 16,
+                                                MaxHarmonicDim := 50000)
+    n := Rank(L);  G := GramMatrix(L);  Ginv := G^-1;
+   
+    coords := [ Coordinates(s[1]) : s in H ];      // half-shell
+    error if #coords eq 0, "no vectors of that norm";
+    m := Norm(H[1]);
+
+    dims := harmonic_Molien_dims(A, MaxDegree);
+    printf "n = %o, m = %o, |X| = %o, |Aut(L)| = %o\n", n, m, 2*#coords, #A;
+
+    s := 0; failed := 0; capped := 0;  k := 2;                          // odd k auto-vanish
+    while k le MaxDegree do
+        if dims[k+1] eq 0 then
+            s := k;                                                     // no invariants: design, free
+        elif Binomial(n+k-1, k) gt MaxHarmonicDim then
+            capped := k; break;                                         // harmonic space too big to build
+        else
+            inv := GHarmonics_invariant(A, Ginv, n, k);
+            assert #inv eq dims[k+1];                                   // construction sanity vs Molien
+            ok := true;
+            for P in inv do
+                if &+[ Rationals() | Evaluate(P, c) : c in coords ] ne 0 then ok := false; break; end if;
+            end for;
+            if ok then s := k; else failed := k; break; end if;
+        end if;
+        k +:= 2;
+    end while;
+
+    tdes := s+1;
+    if failed ne 0 then
+        printf "Shell is a spherical %o-design; fails at degree %o (a degree-%o invariant has nonzero sum).\n",
+               tdes, failed, failed;
+    elif capped ne 0 then
+        printf "Shell is a spherical %o-design so far; degree %o has %o invariant harmonic(s) but\n",
+               tdes, capped, dims[capped+1];
+        printf "  dim H_%o exceeds MaxHarmonicDim -- raise the cap, or run the theta test on those.\n", capped;
+    else
+        printf "Shell is a spherical %o-design (checked through degree %o).\n", tdes, s;
+    end if;
+    return tdes;
+end function;
+
+intrinsic tDesign(L::Lat, S::SeqEnum : A := 0) -> RngIntElt
 {Given a sequence S of representatives of the vectors of a certain norm m in the lattice up to +/-, 
 find the largest integer t such that S is a spherical t-design 
 (sum over s in S of (x.s)^t = C * x.x^(t/2) for some C, which must be (m #S)/n).}
     // TODO (Eran): Check and verify cutoffs
-    if #S lt 10^4 then
-        return shell_design_strength(L,S);
-    elif Rank(L) lt 10 then
-        return shell_design_strength_harmonic(L,S);
-    else
-        
-    end if;
-    return shell_design_strength(L, S);
+    if #S lt 10^4 then return shell_design_strength(L,S); end if;
+    if Rank(L) lt 10 then return shell_design_strength_harmonic(L,S); end if;
+    if A cmpne 0 then return shell_design_strength_Molien(L,S,A); end if;
+    return "\\N";
 end intrinsic;

@@ -125,6 +125,25 @@ ExpectAI("E8", Lattice("E",8), true, true);
 ExpectAI("D8 (not E8)", Lattice("D",8), false, true);
 ExpectAI("Z9 (orthog decomp)", StandardLattice(9), false, true);
 
+// Discriminant 4/5 (Wang Thm. 2.16), via Plesken's families a;(s)b = diag(1..1,-s)+a^t a.
+function pleskenLat(av, s)
+    m := #av;
+    G := DiagonalMatrix(Integers(), [1 : i in [1..m-1]] cat [-s])
+         + Transpose(Matrix(Integers(),1,m,av)) * Matrix(Integers(),1,m,av);
+    return LatticeWithGram(G);
+end function;
+// 1^11;4 (dim 12, det 4) and 1^9;(2)5 (dim 10, det 5) are additively indecomposable.
+ExpectAI("1^11;4 (Plesken)", pleskenLat([1: i in [1..11]] cat [4], 1), true, true);
+ExpectAI("1^9;(2)5 (Plesken)", pleskenLat([1: i in [1..9]] cat [5], 2), true, true);
+// det-4 lattice that IS additively decomposable: complement of (x,y), Q(x)=Q(y)=2, in E8 perp E8.
+E8 := Lattice("E",8);  G8 := ChangeRing(GramMatrix(E8), Integers());
+wc := Vector(Integers(),
+        Coordinates(E8, ShortestVectors(E8)[1]) cat Coordinates(E8, ShortestVectors(E8)[2]));
+G16 := DiagonalJoin(G8, G8);
+Bcplt := Matrix(Integers(), [ Eltseq(b) : b in Basis(Kernel(G16 * Transpose(Matrix(wc)))) ]);
+Ldec4 := LatticeWithGram(Bcplt * G16 * Transpose(Bcplt));
+ExpectAI("E8+E8 norm-4 cplt (det4)", Ldec4, false, true);   // additively decomposable
+
 // Plesken III.1 sufficient condition, as a standalone:
 print "SatisfiesPleskenIII1:";
 Expect("E8 satisfies III.1", SatisfiesPleskenIII1(Lattice("E",8)), true);

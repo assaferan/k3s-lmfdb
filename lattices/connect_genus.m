@@ -325,6 +325,69 @@ harder (see Wang, Acta Math. Sinica 41 (2025) 908-924, and Plesken).}
     return Minimum(Dual(L : Rescale := false)) le 1;
 end intrinsic;
 
+// ---- helpers for additive (in)decomposability of low-discriminant lattices ----
+
+function lat_adjugate(G)
+    GQ := ChangeRing(G, Rationals());
+    Gi := GQ^-1;
+    return ChangeRing(Determinant(GQ) * Gi, Integers());   // det(G) * G^-1, integral
+end function;
+
+// The primitive rank-(n-1) sublattices of L of discriminant t, as a sequence of
+// lattices.  Such a sublattice is w^perp cap L for a dual vector w, and its
+// discriminant equals w * adj(G) * w^t; so we range over the norm-t vectors of
+// the lattice with Gram matrix adj(G).  (For squarefree t every rank-(n-1)
+// sublattice of discriminant t is primitive, so this is exhaustive there.)
+function rank_nm1_sublattices(L, t)
+    G := ChangeRing(GramMatrix(L), Integers());
+    AL := LatticeWithGram(lat_adjugate(G));
+    res := [];
+    for p in ShortVectors(AL, t, t) do
+        w := Matrix(Integers(), Ncols(G), 1, Eltseq(p[1]));
+        B := Matrix(Integers(), [ Eltseq(b) : b in Basis(Kernel(w)) ]);
+        Append(~res, LatticeWithGram(B * G * Transpose(B)));
+    end for;
+    return res;
+end function;
+
+function lat_orth_indecomposable(M)
+    return Rank(M) le 1 or #OrthogonalDecomposition(M) eq 1;
+end function;
+
+function has_indec_rank_nm1_sublattice(L, t)
+    return exists{ M : M in rank_nm1_sublattices(L, t) | lat_orth_indecomposable(M) };
+end function;
+
+// Whether L has orthogonal sublattices M1 perp M2 with disc M1 = a, disc M2 = b
+// spanning a rank-(n-1) sublattice (which then has discriminant a*b).
+function has_orth_pair_sublattice(L, a, b)
+    for M in rank_nm1_sublattices(L, a*b) do
+        ds := Rank(M) le 1 select [ Determinant(M) ]
+              else [ Determinant(C) : C in OrthogonalDecomposition(M) ];
+        if a eq b then
+            if #[ x : x in ds | x eq a ] ge 2 then return true; end if;
+        elif a in ds and b in ds then
+            return true;
+        end if;
+    end for;
+    return false;
+end function;
+
+// Whether L has a decomposable (necessarily unimodular) integral overlattice of
+// index 2 -- the "represented by a decomposable unimodular lattice" condition.
+function has_decomposable_unimodular_overlattice(L)
+    Ld := Dual(L : Rescale := false);
+    A, q := quo< Ld | L >;
+    for a in A do
+        if a eq A!0 or 2*a ne A!0 then continue; end if;
+        M := sub< Ld | Basis(L) cat [a @@ q] >;
+        if IsIntegral(M) and Index(M, L) eq 2 and #OrthogonalDecomposition(M) gt 1 then
+            return true;
+        end if;
+    end for;
+    return false;
+end function;
+
 intrinsic SatisfiesPleskenIII1(L::Lat) -> BoolElt
 {Plesken's sufficient condition (Prop. III.1) for additive indecomposability: L is
 additively indecomposable if (i) min(L*) > 1 (L is a "block form"), and (ii) the
@@ -351,9 +414,9 @@ not a sum of two nonzero positive semidefinite integral matrices).  Returns
 not known.  The decision is complete for rank <= 8 (Mordell: none in ranks 2-5;
 Plesken Thm. III.4: exactly E_n in ranks 6,7,8; only (Z,1) in rank 1) and, for
 larger rank, whenever the lattice is orthogonally decomposable, has a rank-1
-additive split, has discriminant 2 (Wang Thm. 2.11), or meets Plesken's
-sufficient condition III.1.  Discriminants 3-5 (Wang Thm. 2.12/2.16) and the
-general case are left undetermined.}
+additive split, has discriminant 2-5 (Wang Thms. 2.11/2.12/2.16), or meets
+Plesken's sufficient condition III.1.  Discriminants >= 6 are left undetermined,
+as is the rare discriminant 4/5 case with a unimodular rank-(n-1) sublattice.}
     n := Rank(L);
     if n eq 0 then return true, true; end if;
     d := Determinant(L);
@@ -369,8 +432,27 @@ general case are left undetermined.}
         return false, true;
     end if;
     if d eq 2 then return true, true; end if;                   // Wang Thm. 2.11
+    if d eq 3 then                                              // Wang Thm. 2.12
+        return #rank_nm1_sublattices(L, 2) eq 0, true;          //   decomposable iff a rank-(n-1) disc-2 sublattice
+    end if;
+    if d eq 4 or d eq 5 then                                    // Wang Thm. 2.16
+        cond1 := (d eq 4) select has_decomposable_unimodular_overlattice(L)
+                            else (#rank_nm1_sublattices(L, 2) gt 0);
+        if cond1 or has_indec_rank_nm1_sublattice(L, d-2)
+                 or has_indec_rank_nm1_sublattice(L, d-1)
+                 or has_orth_pair_sublattice(L, 2, d-2) then
+            return false, true;                                 // additively decomposable
+        end if;
+        // The conditions above use the primitive rank-(n-1) sublattices; the only
+        // gap is the non-primitive disc-(d-1) ones, which exist iff L has a
+        // unimodular rank-(n-1) sublattice.  When it has none, the analysis is
+        // complete and L is additively indecomposable.
+        if #rank_nm1_sublattices(L, 1) eq 0 then
+            return true, true;
+        end if;
+    end if;
     if SatisfiesPleskenIII1(L) then return true, true; end if;  // Plesken III.1 (min(L*) > 1 already checked)
-    return false, false;   // discriminant 3-5 (Wang 2.12/2.16) and general case: undetermined
+    return false, false;   // discriminant >= 6 (or the rare disc 4/5 gap): undetermined
 end intrinsic;
 
 intrinsic LoadVdat(labels::SeqEnum[MonStgElt]) -> SeqEnum[Tup]
@@ -500,6 +582,7 @@ intrinsic ConnectGenus(label::MonStgElt : timeout := 1800)
             lat[col] := "\\N"; // Overwritten below if possible
         end for;
         if lat["is_indecomposable"] then
+            aut_group := (lat["aut_group"] cmpne "\\N") select StringToGroup(lat["aut_group"]) else 0;
             // In addition to the timeout, we may want to impose a rank limit
             success, vdat, elapsed := TimeoutCall(timeout, VoronoiData, <L, aut_group>, 5);
             if success then
@@ -523,7 +606,7 @@ intrinsic ConnectGenus(label::MonStgElt : timeout := 1800)
                     lat["is_strongly_eutactic"] := lat["is_eutactic"] and (#Set(eutaxy) eq 1);
                 end if;
                 // tDesign only needs reps up to +/-
-                TimeoutAssign(~lat, "t_design", tDesign, <L, half>, timeout);
+                TimeoutAssign(~lat, "t_design", tDesign, <L, half>, timeout : Parameters := [<A,aut_group>]);
                 if lat["t_design"] cmpne "\\N" then
                     if lat["t_design"] ge 2 then
                         if has_eutaxy then
