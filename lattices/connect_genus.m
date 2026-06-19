@@ -20,7 +20,7 @@ function load_genus_data(genus_label)
     return genus;
 end function;
 
-function lookup_hash_function(genus_hash) // TODO: the data needs to be written somewhere
+function lookup_hash_function(genus_hash)
     fname := Sprintf("genera_hash/%o", genus_hash);
     if not OpenTest(fname, "r") then
         return "";
@@ -30,7 +30,7 @@ end function;
 
 hash_format := Split(Split(Read("lat_hash.format"), "\n")[1], "|");
 function load_hash_data(genus_hash : as_assoc:=true)
-    fname := Sprintf("lattice_hashes/%o", genus_hash); // TODO: should add folders
+    fname := Sprintf("lattice_hashes/%o", genus_hash); // TODO (David): should add folders
     if not OpenTest(fname, "r") then
         if as_assoc then return AssociativeArray(); else return []; end if;
     end if;
@@ -145,9 +145,11 @@ end intrinsic;
 intrinsic VoronoiData(L::Lat, A::GrpMat) -> FldRatElt, SeqEnum[ModTupFldElt], RngIntElt, RngIntElt, RngIntElt
 {Given a lattice L and its automorphism group A, find the covering norm, orbit representatives for the deep holes, the number of deep holes, the number of deep hole orbits, and the number of holes}
     cn := CoveringRadius(L);
+    cnn := Numerator(cn);
+    cnd := Denominator(cn);
     dh := DeepHoles(L);
     reps := AutOrbits(A, dh);
-    return cn, reps, #dh, #reps, #Holes(L);
+    return cnn, cnd, reps, #dh, #reps, #Holes(L);
 end intrinsic;
 
 intrinsic IsWellRounded(L::Lat, S::SeqEnum) -> BoolElt
@@ -294,7 +296,16 @@ end intrinsic;
 
 intrinsic LoadVdat(labels::SeqEnum[MonStgElt]) -> SeqEnum[Tup]
 {Given a sequence of lattice labels, load Voronoi data as a sequence of tuples (covering norm, num deep holes, num deep hole orbits, num holes).  If any not available, return empty sequence instead}
-    return []; // TODO
+    ans := [];
+    for label in labels do
+        fname := "voronoi/" * label;
+        if not OpenTest(fname, "r") then
+            return [];
+        end if;
+        cnn, cnd, ndh, ndho, nh := Explode(Split(Read(fname), "|"));
+        Append(~ans, <StringToInteger(cnn), StringToInteger(cnd), StringToInteger(ndh), StringToInteger(ndho), StringToInteger(nh)>);
+    end for;
+    return ans;
 end intrinsic;
 
 intrinsic TimeoutAssign(~D::Assoc, key::MonStgElt, func::UserProgram, inp::Tup, timeout::RngIntElt)
@@ -341,16 +352,13 @@ intrinsic ConnectGenus(label::MonStgElt : timeout := 1800)
             lat["dual_theta_prec"] := 1;
         end if;
 
-        lat["is_universal"] := "\\N";
-        lat["is_even_universal"] := "\\N";
         lat["is_regular"] := "\\N";
         lat["universality"] := "\\N";
         lat["even_universality"] := "\\N";
         lat["regularity"] := "\\N";
 
-        // TODO: use 15/290 theorem and theta series to compute is_universal, is_even_univeral
-        // TODO: use theta series to guess is_regular
-        // TODO: use embedding data to compute universality, even_universality, regularity
+        // TODO (David): use theta series to guess is_regular
+        // TODO (David): use embedding data to compute universality, even_universality, regularity
 
         if scale eq 1 then
             lat["primitive_scaling"] := "\\N";
@@ -376,7 +384,9 @@ intrinsic ConnectGenus(label::MonStgElt : timeout := 1800)
             // In addition to the timeout, we may want to impose a rank limit
             success, vdat, elapsed := TimeoutCall(timeout, VoronoiData, <L, aut_group>, 5);
             if success then
-                lat["covering_norm"], lat["deep_holes"], lat["deep_hole_count"], lat["deep_hole_orbit_count"], lat["hole_count"] := Explode(vdat); // TODO: covering norm can be rational; need to update schema and saving process
+                lat["covering_norm_num"], lat["covering_norm_den"], lat["deep_holes"], lat["deep_hole_count"], lat["deep_hole_orbit_count"], lat["hole_count"] := Explode(vdat);
+                // We write the data to a file for loading in the decomposable case
+                Write("voronoi/" * label, Sprintf("%o|%o|%o|%o|%o", lat["covering_norm_num"], lat["covering_norm_den"], lat["deep_hole_count"], lat["deep_hole_orbit_count"], lat["hole_count"]));
             end if;
 
             has_sv, S, elapsed := TimeoutCall(timeout, ShortestVectors, <L>, 1); 
@@ -407,7 +417,7 @@ intrinsic ConnectGenus(label::MonStgElt : timeout := 1800)
                 num_deep_hole_orbits := 1;
                 num_holes := 1;
                 for i in [1..#vdat] do
-                    cn, ndh, ndho, nh := Explode(vdat[i]);
+                    cnn, cnd, ndh, ndho, nh := Explode(vdat[i]);
                     m := lat["orthogonal_multiplicities"][i];
                     cnorm +:= m * cn;
                     num_deep_holes *:= ndh^m;
@@ -422,8 +432,8 @@ intrinsic ConnectGenus(label::MonStgElt : timeout := 1800)
         end if;
 
         lat["is_additively_indecomposable"] := "\\N"; // TODO
-        lat["tensor_decompositions"] := "\\N"; // TODO
-        lat["is_tensor_product"] := "\\N"; // TODO
+        lat["tensor_decompositions"] := "\\N"; // TODO (David)
+        lat["is_tensor_product"] := "\\N"; // TODO (David)
 
         if lat["is_even"] then
             lat["even_sublattice"] := "\\N";
@@ -437,12 +447,12 @@ intrinsic ConnectGenus(label::MonStgElt : timeout := 1800)
         if Rank(R1) eq 0 or Rank(R1) eq n then
             lat["norm1_complement"] := "\\N";
         else
-            lat["norm1_complement"] := FindLabel(OrthogonalComplementFaster(L, R1)); // TODO: Make OrthogonalComplementFaster work for lattices
+            lat["norm1_complement"] := FindLabel(OrthogonalComplementFaster(L, R1)); // TODO (Eran): Make OrthogonalComplementFaster work for lattices
         end if;
 
         sv2 := ShortVectors(L, 1, 2);
         R := sub<L|[x[1] : x in sv2]>;
-        lat["root_sublattice"] := RootString(R); // TODO
+        lat["root_sublattice"] := RootString(R); // TODO (Eran)
         if Rank(R) eq 0 or Rank(R) eq n then
             lat["root_complement"] := "\\N";
         else

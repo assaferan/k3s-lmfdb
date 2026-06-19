@@ -26,7 +26,8 @@ end intrinsic;
 
 intrinsic BVHash(L::Lat, genus_hash::RngIntElt, m::RngIntElt) -> RngIntElt
 {Combines the hash of the genus with a BV hash of vectors of norm at most m}
-    error "NotImplemented"; // TODO
+    lat_hash := HBV(GramMatrix(L), m);
+    return CollapseIntList([genus_hash, lat_hash]);
 end intrinsic;
 
 intrinsic BVhashes(lattices::SeqEnum[Lat], genus_hash::RngIntElt, m::RngIntElt) -> SeqEnum[RngIntElt]
