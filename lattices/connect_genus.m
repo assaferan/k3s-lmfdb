@@ -312,8 +312,6 @@ intrinsic ConnectGenus(label::MonStgElt : timeout := 1800)
         end if;
 
         lat["is_additively_indecomposable"] := "\\N"; // TODO
-        lat["tensor_decompositions"] := "\\N"; // TODO (David)
-        lat["is_tensor_product"] := "\\N"; // TODO (David)
 
         if lat["is_even"] then
             lat["even_sublattice"] := "\\N";
