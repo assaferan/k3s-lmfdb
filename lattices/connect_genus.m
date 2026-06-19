@@ -369,6 +369,20 @@ intrinsic tDesign(L::Lat, S::SeqEnum) -> RngIntElt
     return shell_design_strength(L, S);
 end intrinsic;
 
+intrinsic PerfectionDefect(L::Lat, S::SeqEnum) -> RngIntElt
+{Given a lattice L of rank n, return n(n+1)/2 - rank of span (in M_n(R)) of the rank 1 matrices (s_i s_i^t), with s in S.}
+    n := Rank(L);
+    N := n*(n+1) div 2;
+    if #S eq 0 then
+        return N;
+    end if;
+    U := [ Vector(Rationals(), [ c : c in Coordinates(L, s) ]) : s in S ];
+    idx := [ <i,j> : j in [i..n], i in [1..n] ];
+    svec := func< M | Vector(Rationals(), [ M[p[1]][p[2]] : p in idx ]) >;
+    A := Matrix([ svec(Transpose(Matrix(u)) * Matrix(u)) : u in U ]);
+    return N - Rank(A);
+end intrinsic;
+
 intrinsic LoadVdat(labels::SeqEnum[MonStgElt]) -> SeqEnum[Tup]
 {Given a sequence of lattice labels, load Voronoi data as a sequence of tuples (covering norm, num deep holes, num deep hole orbits, num holes).  If any not available, return empty sequence instead}
     ans := [];
@@ -379,6 +393,21 @@ intrinsic LoadVdat(labels::SeqEnum[MonStgElt]) -> SeqEnum[Tup]
         end if;
         cnn, cnd, ndh, ndho, nh := Explode(Split(Read(fname), "|"));
         Append(~ans, <StringToInteger(cnn), StringToInteger(cnd), StringToInteger(ndh), StringToInteger(ndho), StringToInteger(nh)>);
+    end for;
+    return ans;
+end intrinsic;
+
+intrinsic LoadSVdat(labels::SeqEnum[MonStgElt]) -> SeqEnum[Tup]
+{Given a sequence of lattice labels, load short vectors data as a sequence of tuples
+(shortest vectors,....).  If any not available, return empty sequence instead}
+    ans := [];
+    for label in labels do
+        fname := "shortest/" * label;
+        if not OpenTest(fname, "r") then
+            return [];
+        end if;
+        shortest := Explode(Split(Read(fname), "|"));
+        Append(~ans, < shortest >);
     end for;
     return ans;
 end intrinsic;
@@ -513,12 +542,12 @@ intrinsic ConnectGenus(label::MonStgElt : timeout := 1800)
                 for i in [1..#vdat] do
                     cnn, cnd, ndh, ndho, nh := Explode(vdat[i]);
                     m := lat["orthogonal_multiplicities"][i];
-                    cnorm +:= m * cn;
+                    cnorm +:= m * (cnn/cnd);
                     num_deep_holes *:= ndh^m;
                     num_deep_hole_orbits *:= Binomial(ndho + m - 1, m);
                     num_holes *:= nh^m;
                 end for;
-                lat["covering_norm"] := cn;
+                lat["covering_norm"] := cnorm;
                 lat["deep_hole_count"] := num_deep_holes;
                 lat["deep_hole_orbit_count"] := num_deep_hole_orbits;
                 lat["hole_count"] := num_holes;
