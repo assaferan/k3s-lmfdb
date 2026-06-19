@@ -24,7 +24,8 @@ intrinsic StringToReal(s::MonStgElt) -> RngIntElt
     return #t eq 1 select RealField()!n else RealField()!n + s*RealField()!StringToInteger(t[2])/10^#t[2];
 end intrinsic;
 
-function ThetaSeriesIncremental(L, target_prec, timeout)
+intrinsic ThetaSeriesIncremental(L::Lat, target_prec::RngIntElt, timeout::RngIntElt) -> SeqEnum, RngIntElt
+{Compute the theta series coefficients of L, doubling the precision until either target_prec is reached or the time budget timeout (in seconds) is exhausted. Returns the coefficient sequence obtained and the precision actually reached.}
     best_theta := [];
     best_prec := 0;
     remaining := timeout;
@@ -44,13 +45,14 @@ function ThetaSeriesIncremental(L, target_prec, timeout)
         prec *:= 2;
     end while;
     return best_theta, best_prec;
-end function;
+end intrinsic;
 
 function dict_to_jsonb(dict)
     return "{" * Join([Sprintf("\"%o\":%o", key, dict[key]) : key in Keys(dict)], ",") * "}";
 end function;
 
-function to_postgres(val : jsonb_val := false)
+intrinsic to_postgres(val::Any : jsonb_val := false) -> Any
+{Serialise a value (matrix, sequence, tuple, associative array or scalar) into the Postgres array / JSON text format used for the database export.}
     delims := jsonb_val select "[]" else "{}";
     if ISA(Type(val),Mtrx) then
         return to_postgres(Eltseq(val) : jsonb_val:=jsonb_val);
@@ -70,7 +72,7 @@ function to_postgres(val : jsonb_val := false)
     else
         return val;
     end if;
-end function;
+end intrinsic;
 
 function RescaledDualNF(L)
     Q := Rationals();
@@ -151,6 +153,7 @@ intrinsic FillGenus(label::MonStgElt : timeout := 1800)
     if n eq 2 then 
         d := Determinant(L0);
         if IsSquare(-d) then 
+            // TODO (Eran) : fix this
             // At the moment, we don't do anything in this case.
             // I think this is always class number 1, but TODO (Eran): check!
             genus_success := false;

@@ -15,6 +15,11 @@ intrinsic OrthogonalComplementFaster(rs::ModTupRng, sub::ModTupRng) -> ModTupRng
     return orth_comp(rs, sub);
 end intrinsic;
 
+intrinsic OrthogonalComplementFaster(L::Lat, sub::Lat) -> Lat
+{Return the orthogonal complement of the sublattice sub in L.}
+    return sub<L | orth_comp(Basis(L), Basis(sub))>;
+end intrinsic;
+
 // this is an example
 // it decomposes into components of rank 5 and 2
 // lat := LatticeWithGram(SymmetricMatrix([6,-9,16,-3,7,18,1,-2,-8,8,0,0,-7,4,4,1,-1,0,-2,0,2,-1,2,1,0,0,0,2]));
@@ -132,10 +137,8 @@ function split_1(lat)
   return orth_1, orth_lat;
 end function;
 
-function root_string(lat)
-  sv := ShortVectors(lat,2,2);
-  sub_2 := LatticeWithGram(GramMatrix(sub<lat|[x[1]: x in sv]>));
-  od := orth_dec(sub_2);
+function root_string_from_rs(R)
+  od := orth_dec(R);
   root_str := "";
   for rl in od do
     if Rank(rl) in [6..8] and Determinant(rl) eq 9-Rank(rl) then
@@ -152,3 +155,17 @@ function root_string(lat)
   end for;
   return root_str;
 end function;
+
+function root_string(lat : is_rs := false)
+  // Eran: modified the sv according to the knowl for root sublattice.
+  // sv := ShortVectors(lat,2,2);
+  if is_rs then return root_string_from_rs(lat); end if;
+  sv := ShortVectors(lat, 1, 2);
+  sub_2 := LatticeWithGram(GramMatrix(sub<lat|[x[1]: x in sv]>));
+  return root_string_from_rs(sub_2);
+end function;
+
+intrinsic RootString(L::Lat : IsRootSystem := true) -> MonStgElt
+{Return a string representing the root lattice of L.}
+  return root_string(L : is_rs := IsRootSystem);
+end intrinsic;
