@@ -93,9 +93,9 @@ end function;
 
 // This is O(#H)
 function shell_design_strength_harmonic(L, H : MaxDegree := 12)
-    n := Rank(L);  G := GramMatrix(L);  Ginv := G^-1;
-    
-    coords := [ Coordinates(s[1]) : s in H ];   // half-shell
+    n := Rank(L);  G := ChangeRing(GramMatrix(L), Rationals());  Ginv := G^-1;
+
+    coords := [ Coordinates(s) : s in H ];   // half-shell (sequence of vectors)
     error if #coords eq 0, "no vectors of that norm";
 
     m := Norm(H[1]);
@@ -158,7 +158,8 @@ function theta_harmonic_vanishes(L, P : Verbose := true)
 end function;
 
 function harmonic_Molien_dims(G, prec)
-    Ms := MolienSeries(G);                         // Hilbert series of the invariant ring
+    Ms := MolienSeries(ChangeRing(G, Rationals()));   // group must be over a field for MolienSeries
+                                                       // (Aut(L) comes as a GrpMat over Z)
     PS<t> := PowerSeriesRing(Rationals(), prec+2);
     h := (1 - t^2) * (PS!Ms);                      // strip the r^2 factor -> harmonic invariants
     return [ Integers()!Coefficient(h, k) : k in [0..prec] ];   // dims[k+1] = dim H_k^G
@@ -167,9 +168,10 @@ end function;
 // Aut-invariant degree-k G-harmonics. Uses the RIGHT action P(c*g)=P(c),
 // matching how Magma's automorphisms move lattice coordinates (c -> c*g).
 function GHarmonics_invariant(G, Ginv, n, k)
-    R := PolynomialRing(Rationals(), n);
     H := GHarmonics(Ginv, n, k);  d := #H;
     if d eq 0 then return H; end if;
+    R := Parent(H[1]);   // reuse the harmonics' own ring; a fresh PolynomialRing(Q,n)
+                         // is a distinct object and cross-ring MonomialCoefficient hangs
     mons := MonomialsOfDegree(R, k);
     Hmat := Matrix([ [ MonomialCoefficient(P, mn) : mn in mons ] : P in H ]);
     fixed := VectorSpace(Rationals(), d);
@@ -205,9 +207,9 @@ end function;
 //  for free. Needs Aut(L); pass a precomputed group via Aut:= to avoid recomputing.
 function shell_design_strength_Molien(L, H, A : MaxDegree := 16,
                                                 MaxHarmonicDim := 50000)
-    n := Rank(L);  G := GramMatrix(L);  Ginv := G^-1;
-   
-    coords := [ Coordinates(s[1]) : s in H ];      // half-shell
+    n := Rank(L);  G := ChangeRing(GramMatrix(L), Rationals());  Ginv := G^-1;
+
+    coords := [ Coordinates(s) : s in H ];      // half-shell (sequence of vectors)
     error if #coords eq 0, "no vectors of that norm";
     m := Norm(H[1]);
 
@@ -250,9 +252,18 @@ intrinsic tDesign(L::Lat, S::SeqEnum : A := 0) -> RngIntElt
 {Given a sequence S of representatives of the vectors of a certain norm m in the lattice up to +/-, 
 find the largest integer t such that S is a spherical t-design 
 (sum over s in S of (x.s)^t = C * x.x^(t/2) for some C, which must be (m #S)/n).}
-    // TODO (Eran): Check and verify cutoffs
+    // The three methods agree (verified against each other on root lattices); the
+    // cutoffs only choose the fastest in each regime:
+    //   * direct (Gegenbauer histogram), O(#S^2)        -- small shells;
+    //   * harmonic, O(#S) but builds degree-d harmonic spaces in n variables
+    //     -- large shells, but only feasible in small rank;
+    //   * Molien, builds only the Aut(L)-invariant harmonics -- large shells in
+    //     large rank, needs the automorphism group A.
+    // For shortest-vector shells the strength is small (<= 11, the Leech case), so
+    // the differing internal MaxDegree caps (20/12/16) never bite.
     if #S lt 10^4 then return shell_design_strength(L,S); end if;
     if Rank(L) lt 10 then return shell_design_strength_harmonic(L,S); end if;
-    if A cmpne 0 then return shell_design_strength_Molien(L,S,A); end if;
-    return "\\N";
+    require A cmpne 0 :
+        "tDesign: a large shell in rank >= 10 needs the automorphism group; pass A := AutomorphismGroup(L)";
+    return shell_design_strength_Molien(L,S,A);
 end intrinsic;
