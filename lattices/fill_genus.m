@@ -288,6 +288,8 @@ intrinsic FillGenus(label::MonStgElt : timeout := 1800)
         lat["minimum"] := "\\N";
         lat["theta_series"] := "\\N";
         lat["theta_prec"] := "\\N";
+        lat["dual_theta_series"] := "\\N";
+        lat["dual_theta_prec"] := "\\N";
         lat["successive_minima"] := "\\N";
         // Trying to reduce the size of the entries in the gram matrix
         gram0 := GramMatrix(L);
@@ -382,6 +384,17 @@ intrinsic FillGenus(label::MonStgElt : timeout := 1800)
                 lat["theta_series"] := [1];
                 lat["theta_prec"] := 1;
             end if;
+            // Dual theta series (used as a tie-breaker in cmp_lat below, and stored
+            // alongside the primal theta series).
+            D := Dual(L);
+            dual_theta, dual_theta_prec := ThetaSeriesIncremental(D, Max(150, Minimum(D) + 4), to_per_rep);
+            if dual_theta_prec gt 0 then
+                lat["dual_theta_series"] := dual_theta;
+                lat["dual_theta_prec"] := dual_theta_prec;
+            else
+                lat["dual_theta_series"] := [1];
+                lat["dual_theta_prec"] := 1;
+            end if;
             //success, minima, elapsed := TimeoutCall(to_per_rep, SuccessiveMinima, <L>, 2);
             //vprintf FillGenus, 1 : "Successive minima computed in %o seconds\n", elapsed;
             //if success then 
@@ -401,10 +414,18 @@ intrinsic FillGenus(label::MonStgElt : timeout := 1800)
     vprintf FillGenus, 1 : "Done!\n";
 
     function cmp_lat(L1, L2)
+        // 1. automorphism group size (larger first)
         if Type(L1["aut_size"]) eq RngIntElt and Type(L2["aut_size"]) eq RngIntElt then
             d := L2["aut_size"] - L1["aut_size"];
             if (d ne 0) then return d; end if;
         end if;
+        // 2. density (denser first); within a genus the determinant is fixed, so we
+        //    sort by the minimum as a proxy (larger minimum = denser)
+        if Type(L1["minimum"]) eq RngIntElt and Type(L2["minimum"]) eq RngIntElt then
+            d := L2["minimum"] - L1["minimum"];
+            if (d ne 0) then return d; end if;
+        end if;
+        // 3. theta series
         if Type(L1["theta_series"]) eq SeqEnum and Type(L2["theta_series"]) eq SeqEnum then
             prec := Minimum(L1["theta_prec"], L2["theta_prec"]);
             for i in [1..prec - 1] do
@@ -412,6 +433,15 @@ intrinsic FillGenus(label::MonStgElt : timeout := 1800)
                 if (d ne 0) then return d; end if;
             end for;
         end if;
+        // 4. dual theta series
+        if Type(L1["dual_theta_series"]) eq SeqEnum and Type(L2["dual_theta_series"]) eq SeqEnum then
+            prec := Minimum(L1["dual_theta_prec"], L2["dual_theta_prec"]);
+            for i in [1..prec - 1] do
+                d := L1["dual_theta_series"][i] - L2["dual_theta_series"][i];
+                if (d ne 0) then return d; end if;
+            end for;
+        end if;
+        // 5. arbitrary tiebreaker: the (reduced) Gram matrix entries
         for i in [1..n^2] do
             d := L1["gram"][i] - L2["gram"][i];
             if (d ne 0) then return d; end if;

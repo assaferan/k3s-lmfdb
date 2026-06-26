@@ -575,22 +575,14 @@ intrinsic ConnectGenus(label::MonStgElt : timeout := 1800)
         lat := lats[i];
         L := GramStringToLat(lat["gram"], n);
         D := Dual(L);
-        m := Minimum(D);
-        target_prec := Max(150, m+4);
 
         lat["dual_det"] := Determinant(D);
         lat["dual_label"] := FindLabel(D);
         lat["dual_density"] := Density(D);
         lat["dual_hermite"] := HermiteNumber(D);
         lat["dual_kissing"] := KissingNumber(D);
-        dual_theta, dual_theta_prec := ThetaSeriesIncremental(D, target_prec, to_per_rep);
-        if dual_theta_prec gt 0 then
-            lat["dual_theta_series"] := dual_theta;
-            lat["dual_theta_prec"] := dual_theta_prec;
-        else
-            lat["dual_theta_series"] := [1];
-            lat["dual_theta_prec"] := 1;
-        end if;
+        // dual_theta_series / dual_theta_prec are computed and stored in FillGenus
+        // (lat_basic.format), so they are not recomputed here.
 
         lat["is_regular"] := "\\N";
         lat["universality"] := "\\N";
