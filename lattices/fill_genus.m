@@ -341,7 +341,12 @@ intrinsic FillGenus(label::MonStgElt : timeout := 1800)
             theta, theta_prec, rep_theta_elapsed := ThetaSeriesIncremental(L, target_prec, to_per_rep);
             for p in Keys(rep_theta_elapsed) do
                 theta_elapsed[p] := IsDefined(theta_elapsed, p)
+                    // Maximum for worst case Hash computation.
+                    // Change to sum if we care about the average case
                     select Maximum(theta_elapsed[p], rep_theta_elapsed[p]) else rep_theta_elapsed[p];
+            end for;
+            for p in Keys(theta_elapsed) do
+                if not IsDefined(rep_theta_elapsed, p) then theta_elapsed[p] := Infinity(); end if;
             end for;
             lat["is_universal"] := "\\N";
             lat["is_even_universal"] := "\\N";

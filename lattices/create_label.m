@@ -3,16 +3,16 @@
 
 // Helper: base-62 digit for a nonnegative integer rank r (0..61)
 function EncodeRank(r)
-    error if r ge 0 and r lt 62,
+    error if r lt 0 or r ge 62,
         "rank must be in [0..61]";
     if r lt 10 then
         return IntegerToString(r);
     elif r lt 36 then
         // 'a'..'z' for 10..35
-        return Sprintf("%c", StringToCode("a")[1] + (r - 10));
+        return Sprintf("%c", StringToCode("a") + (r - 10));
     else
         // 'A'..'Z' for 36..61
-        return Sprintf("%c", StringToCode("A")[1] + (r - 36));
+        return Sprintf("%c", StringToCode("A") + (r - 36));
     end if;
 end function;
 
@@ -34,10 +34,11 @@ function LocalSymbol(G,p)
 end function;
 
 function SymbolTupleList(Gp)
+    Z := Integers();
     if Prime(Gp) eq 2 then
-        return [<Gp`Valuations[i], Gp`Ranks[i], Gp`Determinants[i], Gp`Parities[i], Gp`Oddities[i]> : i in [1..#Gp`Valuations]];
+        return [<Z!Gp`Valuations[i], Z!Gp`Ranks[i], Z!Gp`Determinants[i], Z!Gp`Parities[i], Z!Gp`Oddities[i]> : i in [1..#Gp`Valuations]];
     end if;
-    return [<Gp`Valuations[i], Gp`Ranks[i], Gp`Determinants[i]> : i in [1..#Gp`Valuations]];
+    return [<Z!Gp`Valuations[i], Z!Gp`Ranks[i], Z!Gp`Determinants[i]> : i in [1..#Gp`Valuations]];
 end function;
 
 // Translate of Python create_genus_label
@@ -47,9 +48,10 @@ end function;
 //     NumberOfBlocks(), Trains(), Compartments(), CanonicalSymbol(), SymbolTupleList()
 // CanonicalSymbol() is assumed to be a seq of tuples with fields:
 //   <valuation, rank, sign, (..), oddity> and sign in {+1,-1}
-function CreateGenusLabel(genus_sym)
+intrinsic CreateGenusLabel(genus_sym::SymGen) -> MonStgElt
+{The LMFDB label of the genus symbol, of the form rank.nplus.det.j1...jk.x .}
     rk := Rank(genus_sym);
-    sig := Signature(genus_sym);
+    sig := Signature(genus_sym);              // Magma's Signature on a genus is n_plus
     det := Abs(Determinant(genus_sym));
 
     primes := PrimeDivisors(2*det);
@@ -69,35 +71,37 @@ function CreateGenusLabel(genus_sym)
     end for;
     jordan_ranks := [ &cat [ EncodeRank(r) : r in rklist ] : rklist in rks ];
 
-    // Local data bits (start with p = 2)
+    // Local data bits (start with p = 2).  Magma's Trains/Compartments use
+    // 1-based block indices, whereas the label's bit positions are 0-based.
     s2 := LocalSymbol(genus_sym, 2);
-    block_n := NumberOfBlocks(s2);
-    train_ends := [ tr[#tr] : tr in Trains(s2) ];
-    assert train_ends[#train_ends] eq block_n - 1;
+    block_n := #s2;
+    can_sym := SymbolTupleList(CanonicalLocalGenus(s2));   // <val,rank,det,parity,oddity>
 
     bits := [];
 
-    // Compartments bitset over blocks 0..block_n-1
+    // Compartments bitset over blocks 0..block_n-1 (block index e -> bit e-1)
     comparts := &cat Compartments(s2);
-    compart_symbol := &+ [ 2^e : e in comparts ];
+    compart_symbol := &+ [ Integers() | 2^(e-1) : e in comparts ];
     bits cat:= DigitsLSB(compart_symbol, block_n);
 
     // Oddities: 3 bits per compartment, packed little-endian by compartment index
-    can_sym := CanonicalSymbol(s2);
-    oddities := [ (&+ [ can_sym[t][5] : t in cmpart ]) mod 8 : cmpart in Compartments(s2) ];
-    oddities_symbol := &+ [ o * 2^(3*(i-1)) : i->o in oddities ];
+    oddities := [ (&+ [ Integers() | can_sym[t][5] : t in cmpart ]) mod 8 : cmpart in Compartments(s2) ];
+    oddities_symbol := &+ [ Integers() | o * 2^(3*(i-1)) : i->o in oddities ];
     bits cat:= DigitsLSB(oddities_symbol, 3 * #Compartments(s2));
 
-    // Signs of trains at 2: store (1 - sign)/2
-    signs2 := [ can_sym[Trains(s2)[i][1]][3] : i in [1..#Trains(s2)] ];
+    // Signs of trains at 2: store (1 - sign)/2, where sign is the 2-adic character
+    // of the first block's determinant (det = 1,7 mod 8 -> +1; det = 3,5 mod 8 -> -1).
+    signs2 := [ (can_sym[Trains(s2)[i][1]][3] mod 8 in {1, 7}) select 1 else -1
+                : i in [1..#Trains(s2)] ];
     bits cat:= [ (1 - s) div 2 : s in signs2 ];
 
-    // For other primes dividing det: append signs of nonzero blocks
+    // For other primes dividing det: append signs of nonzero blocks, where the
+    // sign is the Kronecker symbol of the block determinant (square -> +1).
     assert primes[1] eq 2;
     for p in primes[2..#primes] do
         sp := LocalSymbol(genus_sym, p);
         tups := SymbolTupleList(sp);
-        signs := [ t[3] : t in tups ];
+        signs := [ IsSquare(GF(p) ! t[3]) select 1 else -1 : t in tups ];
         bits cat:= [ (1 - s) div 2 : s in signs ];
     end for;
 
@@ -109,9 +113,9 @@ function CreateGenusLabel(genus_sym)
                IntegerToString(sig),
                IntegerToString(det) ] cat
              jordan_ranks cat
-             [ IntegerToString(local_data, 16) ];
+             [ ToLower(IntegerToString(local_data, 16)) ];   // Sage uses lowercase hex
     return Join(comps, ".");
-end function;
+end intrinsic;
 
 // ---------------------------------------------------------------------------
 // Inverse of CreateGenusLabel: build the Magma genus symbol (SymGen) from an
