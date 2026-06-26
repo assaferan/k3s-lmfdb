@@ -440,7 +440,7 @@ intrinsic FillGenus(label::MonStgElt : timeout := 1800)
     // We need to be able to look up hash functions for lattices that are not in the main
     // genus being processed.  So we write the hash function used to a separate file
     // so that it can be looked up when needed (see lookup_hash_function in connect_genus.m)
-    Write(Sprintf("genera_hash/%o", advanced["genus_hash"]), advanced["hash_function"] : Overwrite);
+    Write(LabelPath("genera_hash", n, s, advanced["genus_hash"] : Create), advanced["hash_function"] : Overwrite);
 
     // TODO: Compute ambient_lattice
 
@@ -464,7 +464,7 @@ intrinsic FillGenus(label::MonStgElt : timeout := 1800)
     end for;
     // Now write hash data
     output := Join([Join([Sprintf("%o", to_postgres(lat[k])) : k in hash_format], "|") : lat in lats], "\n");
-    Write("lattice_hashes/" * advanced["genus_hash"], output : Overwrite);
+    Write(LabelPath("lattice_hashes", n, s, advanced["genus_hash"] : Create), output : Overwrite);
 
     error if Keys(basics) ne Set(basic_format), [k : k in basic_format | k notin Keys(basics)], [k : k in Keys(basics) | k notin basic_format];
     error if Keys(advanced) ne Set(advanced_format), [k : k in advanced_format | k notin Keys(advanced)], [k : k in Keys(advanced) | k notin advanced_format];

@@ -112,3 +112,148 @@ function CreateGenusLabel(genus_sym)
              [ IntegerToString(local_data, 16) ];
     return Join(comps, ".");
 end function;
+
+// ---------------------------------------------------------------------------
+// Inverse of CreateGenusLabel: build the Magma genus symbol (SymGen) from an
+// LMFDB label.  This is a translation of the Python genus_symbol_from_label in
+// genus.py, with two corrections to that reference:
+//   (1) field 2 of the label is n_plus (not the signature), so we read it
+//       directly instead of computing (rk + sig)/2 -- the Python version only
+//       works for positive-definite genera because of this;
+//   (2) Jordan-rank fields are present only for primes p with v_p(det) > 1, so
+//       for primes with v_p(det) <= 1 we reconstruct the (determined) component
+//       structure rather than consuming a field (the Python version misaligns
+//       the fields when some prime has v_p(det) = 1).
+// ---------------------------------------------------------------------------
+
+// Inverse of EncodeRank: ASCII code of a base-62 digit (0-9 a-z A-Z) -> integer.
+// (Magma's StringToCode returns the integer code of a single character.)
+function DecodeRank(code)
+    if code ge 48 and code le 57 then return code - 48;       // '0'..'9'
+    elif code ge 97 and code le 122 then return code - 87;    // 'a'..'z' -> 10..35
+    else return code - 29; end if;                            // 'A'..'Z' -> 36..61
+end function;
+
+// Least nonsquare unit mod an odd prime p, used to realise a Jordan block whose
+// determinant has Kronecker symbol -1 (the label only records the square class).
+function NonsquareUnit(p)
+    g := GF(p);
+    for d in [2..p-1] do
+        if not IsSquare(g!d) then return d; end if;
+    end for;
+    return 1;
+end function;
+
+// Reconstruct the compartments and trains of the 2-adic symbol from the block
+// valuations and the per-block "in a compartment" bits.  A direct port of the
+// Python build_compartments_and_trains (block indices are 0-based throughout).
+function BuildCompartmentsAndTrains(val2, compart_bits)
+    num := #val2;
+    compartments := [];  trains := [];
+    in_comp := false;  train_start := 0;  compart_start := 0;  scale_diff := 0;
+    for i in [0..num-1] do
+        if i gt 0 then
+            scale_diff := val2[i+1] - val2[i];
+            if (scale_diff gt 2) and (i gt train_start) then
+                Append(~trains, [train_start..i-1]);  train_start := i;
+            end if;
+        end if;
+        if compart_bits[i+1] eq 1 then
+            if in_comp then
+                if (i gt 0) and (scale_diff gt 1) then
+                    Append(~compartments, [compart_start..i-1]);  compart_start := i;
+                end if;
+            end if;
+            if not in_comp then
+                compart_start := i;  in_comp := true;
+                if (i gt train_start) and (scale_diff gt 1) then
+                    Append(~trains, [train_start..i-1]);  train_start := i;
+                end if;
+            end if;
+        else
+            if in_comp then
+                in_comp := false;
+                Append(~compartments, [compart_start..i]);
+                if (i gt train_start) and (scale_diff eq 2) then
+                    Append(~trains, [train_start..i-1]);  train_start := i;
+                end if;
+            else
+                if i gt train_start then
+                    Append(~trains, [train_start..i-1]);  train_start := i;
+                end if;
+            end if;
+        end if;
+    end for;
+    if in_comp then Append(~compartments, [compart_start..num-1]); end if;
+    Append(~trains, [train_start..num-1]);
+    return compartments, trains;
+end function;
+
+intrinsic GenusSymbolFromLabel(label::MonStgElt) -> SymGen
+{Create a genus symbol from an LMFDB label.}
+    sl := Split(label, ".");
+    rk := StringToInteger(sl[1]);
+    nplus := StringToInteger(sl[2]);          // field 2 is n_plus
+    nminus := rk - nplus;
+    det := StringToInteger(sl[3]);
+    primes := PrimeDivisors(2*det);
+
+    // Jordan block (valuation, rank) data for each prime.  A jordan-rank field is
+    // present only when v_p(det) > 1; otherwise the structure is determined.
+    jidx := 0;  pvals := [];  pranks := [];
+    for p in primes do
+        vp := Valuation(det, p);
+        if vp gt 1 then
+            jidx +:= 1;
+            jstr := sl[3 + jidx];
+            rank_dec := [DecodeRank(StringToCode(Substring(jstr, k, 1))) : k in [1..#jstr]];
+            rank_dec := [rk - &+rank_dec] cat rank_dec;     // prepend the valuation-0 block
+            vals := [];  ranks := [];
+            for v in [0..#rank_dec-1] do
+                if rank_dec[v+1] gt 0 then
+                    Append(~vals, v);  Append(~ranks, rank_dec[v+1]);
+                end if;
+            end for;
+        elif vp eq 1 then
+            vals := [0, 1];  ranks := [rk-1, 1];
+        else
+            vals := [0];  ranks := [rk];
+        end if;
+        Append(~pvals, vals);  Append(~pranks, ranks);
+    end for;
+
+    local_data := StringToInteger(sl[3 + jidx + 1], 16);    // the trailing hex field
+
+    // --- prime 2: compartments, trains, oddities and train signs ---
+    val2 := pvals[1];  rank2 := pranks[1];  nb := #val2;
+    compart_bits := [ (local_data div 2^(i-1)) mod 2 : i in [1..nb] ];
+    parities2 := compart_bits;
+    comps, trains := BuildCompartmentsAndTrains(val2, compart_bits);
+    local_data := local_data div 2^nb;
+    ncomp := #comps;
+    oddbits := [ (local_data div 2^(i-1)) mod 2 : i in [1..3*ncomp] ];
+    odd_per_comp := [ &+[ oddbits[3*(j-1)+k+1]*2^k : k in [0..2] ] : j in [1..ncomp] ];
+    local_data := local_data div 2^(3*ncomp);
+    nt := #trains;
+    train_sign_bits := [ (local_data div 2^(i-1)) mod 2 : i in [1..nt] ];
+    local_data := local_data div 2^nt;
+
+    dets2 := [ 1 : i in [1..nb] ];  oddities2 := [ 0 : i in [1..nb] ];
+    for j in [1..ncomp] do oddities2[comps[j][1]+1] := odd_per_comp[j]; end for;
+    for t in [1..nt] do
+        dets2[trains[t][1]+1] := (train_sign_bits[t] eq 1) select 3 else 1;
+    end for;
+
+    symbs := [* LocalGenus(2, val2, rank2, dets2 : Parities := parities2, Oddities := oddities2) *];
+
+    // --- odd primes: per-block determinant signs ---
+    for jp in [2..#primes] do
+        p := primes[jp];  vals := pvals[jp];  ranks := pranks[jp];  n := #vals;
+        sign_bits := [ (local_data div 2^(i-1)) mod 2 : i in [1..n] ];
+        local_data := local_data div 2^n;
+        dets := [ sign_bits[i] eq 0 select 1 else NonsquareUnit(p) : i in [1..n] ];
+        Append(~symbs, LocalGenus(p, vals, ranks, dets));
+    end for;
+
+    return Genus(nplus, nminus, det, [ s : s in symbs ]);
+end intrinsic;

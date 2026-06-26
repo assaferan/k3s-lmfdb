@@ -21,7 +21,7 @@ function load_genus_data(genus_label)
 end function;
 
 function lookup_hash_function(genus_hash, rank, nplus)
-    fname := LabelPath("genera_hash", rank, nplus, genus_hash); // Sprintf("genera_hash/%o", genus_hash);
+    fname := LabelPath("genera_hash", rank, nplus, genus_hash);
     if not OpenTest(fname, "r") then
         return "";
     end if;
@@ -129,7 +129,7 @@ intrinsic LatSortKey(label::MonStgElt) -> Tup
     return <StringToInteger(pieces[1]), -StringToInteger(pieces[2]), StringToInteger(pieces[3]), label>;
 end intrinsic;
 
-intrinsic LabelPath(folder::MonStgElt, rank::RngIntElt, nplus::RngIntElt, identifier::MonStgElt : Create := true) -> MonStgElt
+intrinsic LabelPath(folder::MonStgElt, rank::RngIntElt, nplus::RngIntElt, identifier::MonStgElt : Create := false) -> MonStgElt
 {The on-disk path "folder/rank/nplus/identifier" for a lattice identifier where
 the lattice has rank and nplus.  Centralises the data directory layout so that a
  future change to the folder scheme only needs editing here.  If Create is true,
@@ -141,15 +141,15 @@ the lattice has rank and nplus.  Centralises the data directory layout so that a
     return Sprintf("%o/%o", dir, identifier);
 end intrinsic;
 
-intrinsic LabelPath(folder::MonStgElt, label::MonStgElt : Create := true) -> MonStgElt
+intrinsic LabelPath(folder::MonStgElt, label::MonStgElt : Create := false) -> MonStgElt
 {The on-disk path "folder/rank/nplus/label" for a lattice or genus label of the
  form rank.nplus.det.... .  Centralises the data directory layout so that a
  future change to the folder scheme only needs editing here.  If Create is true,
  the containing directory is created (mkdir -p) so the path is ready to write to.}
     pieces := Split(label, ".");
     require #pieces ge 2 : "label must have the form rank.nplus....";
-    rank := pieces[1];
-    nplus := pieces[2];                   // label is rank.nplus.det.... (see create_genus_label)
+    rank := StringToInteger(pieces[1]);
+    nplus := StringToInteger(pieces[2]);                   // label is rank.nplus.det.... (see create_genus_label)
     return LabelPath(folder, rank, nplus, label : Create := Create);
 end intrinsic;
 
@@ -552,7 +552,7 @@ intrinsic ConnectGenus(label::MonStgElt : timeout := 1800)
     n := StringToInteger(genus["rank"]);
     s := StringToInteger(genus["nplus"]);
     scale := StringToInteger(genus["scale"]);
-    lats := load_hash_data(HashGenus(label), n, s : as_assoc:=false);
+    lats := load_hash_data(HashGenus(GenusSymbolFromLabel(label)), n, s : as_assoc:=false);
     if #lats gt 0 then
         to_per_rep := timeout div #lats + 1;
     end if;
