@@ -837,11 +837,8 @@ def write_all_of_sig_between_genera_basic(n_plus, n_minus, lb_det, ub_det):
     Create data files with all genera of a certain signature with determinant between lb_det and ub_det,
     one file for each genus
     '''
-    if not os.path.exists("genera_basic"):
-        os.makedirs("genera_basic")
-    folder_name = "genera_basic/sig_%d_%d" % (n_plus, n_minus)
-    if not os.path.exists(folder_name):
-        os.makedirs(folder_name)
+    folder_name = "genera_basic/%d/%d" % (n_plus, n_minus)
+    os.makedirs(folder_name, exist_ok=True)
     sgn = 1 if is_even(n_minus) else -1;
     for d in range(lb_det, ub_det+1):
         syms = all_genus_symbols(n_plus, n_minus, sgn*d, only_even=False)
