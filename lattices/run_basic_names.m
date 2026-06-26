@@ -1,6 +1,6 @@
 // Stage 4a of the pipeline: name the atomic lattices (serial, run once).
 //
-//   magma -b [DETCAP:=N] run_name_lattices.m
+//   magma -b [DETCAP:=N] run_basic_names.m
 //
 // Takes Magma's LatticeDatabase lattices (and their integral scalings up to
 // determinant DETCAP) and locates each in our database via its genus, producing

@@ -230,7 +230,7 @@ end intrinsic;
 // --- naming a single lattice during ConnectGenus (stage 4 composite part) ---
 
 intrinsic LoadAtomicNames() -> Assoc
-{Load the atomic-name map written by run_name_lattices (the file "atomic_names",
+{Load the atomic-name map written by run_basic_names (the file "atomic_names",
  one "label|name" per line) as a label -> name associative array.}
     names := AssociativeArray();
     if OpenTest("atomic_names", "r") then

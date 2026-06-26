@@ -562,7 +562,7 @@ intrinsic ConnectGenus(label::MonStgElt : timeout := 1800)
 {Fill in lattice data that requires working with lattices in different genera}
     SetColumns(0);
     advanced_format := Split(Split(Read("lat_advanced.format"), "\n")[1], "|");
-    atomic_names := LoadAtomicNames();              // stage-4 atomic names (run_name_lattices)
+    atomic_names := LoadAtomicNames();              // stage-4 atomic names (run_basic_names)
     name_i := Index(advanced_format, "name");
     genus := load_genus_data(label);
     n := StringToInteger(genus["rank"]);
