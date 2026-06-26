@@ -6,4 +6,4 @@
 	url = git@github.com:edgarcosta/Parallel.magma.git
 [submodule "lattices/lattools"]
 	path = lattices/lattools
-	url = https://github.com/edgarcosta/lattools.git
+	url = https://github.com/assaferan/lattools.git
