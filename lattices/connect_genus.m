@@ -9,7 +9,7 @@ end intrinsic;
 function load_genus_data(genus_label)
     genus := AssociativeArray();
     for stage in ["basic", "advanced"] do
-        genus_data := Split(Split(Read("genera_"*stage*"/" * genus_label), "\n")[1], "|");
+        genus_data := Split(Split(Read(LabelPath("genera_"*stage, genus_label)), "\n")[1], "|");
         genus_format := Split(Read("genera_"*stage*".format"), "|");
         assert #genus_data eq #genus_format;
         for i in [1..#genus_data] do
@@ -475,7 +475,7 @@ intrinsic LoadVdat(labels::SeqEnum[MonStgElt]) -> SeqEnum[Tup]
 {Given a sequence of lattice labels, load Voronoi data as a sequence of tuples (covering norm, num deep holes, num deep hole orbits, num holes).  If any not available, return empty sequence instead}
     ans := [];
     for label in labels do
-        fname := "voronoi/" * label;
+        fname := LabelPath("voronoi", label);
         if not OpenTest(fname, "r") then
             return [];
         end if;
@@ -510,7 +510,7 @@ intrinsic LoadSVdat(labels::SeqEnum[MonStgElt]) -> SeqEnum
 {Given a sequence of lattice labels, load short-vector data for each as an associative array keyed by property name (minimum, shortest, is_well_rounded, ...), with booleans and integers parsed and "\N" denoting a missing value.  If any file is not available, return an empty sequence instead.}
     ans := [];
     for label in labels do
-        fname := "shortest/" * label;
+        fname := LabelPath("shortest", label);
         if not OpenTest(fname, "r") then
             return [];
         end if;
@@ -543,7 +543,7 @@ intrinsic ConnectGenus(label::MonStgElt : timeout := 1800)
     n := StringToInteger(genus["rank"]);
     s := StringToInteger(genus["nplus"]);
     scale := StringToInteger(genus["scale"]);
-    lats := load_hash_data(label : as_assoc:=false);
+    lats := load_hash_data(HashGenus(label), n, s : as_assoc:=false);
     if #lats gt 0 then
         to_per_rep := timeout div #lats + 1;
     end if;
@@ -604,7 +604,7 @@ intrinsic ConnectGenus(label::MonStgElt : timeout := 1800)
             if success then
                 lat["covering_norm_num"], lat["covering_norm_den"], lat["deep_holes"], lat["deep_hole_count"], lat["deep_hole_orbit_count"], lat["hole_count"] := Explode(vdat);
                 // We write the data to a file for loading in the decomposable case
-                Write("voronoi/" * label, Sprintf("%o|%o|%o|%o|%o", lat["covering_norm_num"], lat["covering_norm_den"], lat["deep_hole_count"], lat["deep_hole_orbit_count"], lat["hole_count"]));
+                Write(LabelPath("voronoi", label : Create), Sprintf("%o|%o|%o|%o|%o", lat["covering_norm_num"], lat["covering_norm_den"], lat["deep_hole_count"], lat["deep_hole_orbit_count"], lat["hole_count"]));
             end if;
 
             has_sv, S, elapsed := TimeoutCall(timeout, ShortestVectors, <L>, 1); 
@@ -645,7 +645,7 @@ intrinsic ConnectGenus(label::MonStgElt : timeout := 1800)
                         assert lat["is_perfect"] eq (lat["perfection_defect"] eq 0);
                     end if;
                 end if;
-                Write("shortest/" * label, Sprintf("%o|%o|%o|%o|%o|%o|%o|%o|%o|%o|%o", Minimum(L), lat["shortest"], lat["is_well_rounded"], lat["is_minimal_vector_generated"], lat["is_strongly_well_rounded"], lat["is_eutactic"], lat["is_strongly_eutactic"], lat["t_design"], lat["perfection_defect"], lat["is_perfect"], lat["is_strongly_perfect"]));
+                Write(LabelPath("shortest", label : Create), Sprintf("%o|%o|%o|%o|%o|%o|%o|%o|%o|%o|%o", Minimum(L), lat["shortest"], lat["is_well_rounded"], lat["is_minimal_vector_generated"], lat["is_strongly_well_rounded"], lat["is_eutactic"], lat["is_strongly_eutactic"], lat["t_design"], lat["perfection_defect"], lat["is_perfect"], lat["is_strongly_perfect"]));
             end if;
         else
             vdat := LoadVdat(lat["orthogonal_factors"]);
@@ -774,6 +774,6 @@ intrinsic ConnectGenus(label::MonStgElt : timeout := 1800)
         Remove(~lat, "gram");
         error if Keys(lat) ne Set(advanced_format), [k : k in advanced_format | k notin Keys(lat)], [k : k in Keys(lat) | k notin advanced_format];
         output := Join([Sprintf("%o", to_postgres(lat[k])) : k in advanced_format], "|");
-        Write("lattice_advanced_data/" * lat["label"], output : Overwrite);
+        Write(LabelPath("lattice_advanced_data", lat["label"] : Create), output : Overwrite);
     end for;
 end intrinsic;

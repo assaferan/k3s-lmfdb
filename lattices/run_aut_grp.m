@@ -34,7 +34,7 @@ function automorphism_group(label : timeout := 1800, alg := AutomorphismGroup)
     n_plus := s;             // already n_plus; do NOT use (n+s)/2 (that misreads it as signature)
     n_minus := n - n_plus;
 
-    data := Split(Split(Read(Sprintf("genera_basic/sig_%o_%o/%o", n_plus, n_minus, label)), "\n")[1], "|");
+    data := Split(Split(Read(LabelPath("genera_basic", label)), "\n")[1], "|");
     basic_format := Split(Read("genera_basic.format"), "|");
     assert #data eq #basic_format;
     basics := AssociativeArray();

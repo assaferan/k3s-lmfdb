@@ -177,7 +177,7 @@ end function;
 
 intrinsic FillGenus(label::MonStgElt : timeout := 1800)
 {Fill the data for a genus and its lattice representatives, given files in the genera_basic format.}
-    data := Split(Split(Read("genera_basic/" * label), "\n")[1], "|");
+    data := Split(Split(Read(LabelPath("genera_basic", label)), "\n")[1], "|");
     basic_format := Split(Read("genera_basic.format"), "|");
     advanced_format := Split(Read("genera_advanced.format"), "|");
     hash_format := Split(Read("lat_hash.format"), "|");
@@ -459,7 +459,7 @@ intrinsic FillGenus(label::MonStgElt : timeout := 1800)
         Remove(~lat, "lattice");
         error if Keys(lat) ne Set(lat_format), [k : k in lat_format | k notin Keys(lat)], [k : k in Keys(lat) | k notin lat_format];
         output := Join([Sprintf("%o", to_postgres(lat[k])) : k in lat_format], "|");
-        Write("lattice_basic_data/" * lat["label"], output : Overwrite);
+        Write(LabelPath("lattice_basic_data", lat["label"] : Create), output : Overwrite);
 
     end for;
     // Now write hash data
@@ -469,6 +469,6 @@ intrinsic FillGenus(label::MonStgElt : timeout := 1800)
     error if Keys(basics) ne Set(basic_format), [k : k in basic_format | k notin Keys(basics)], [k : k in Keys(basics) | k notin basic_format];
     error if Keys(advanced) ne Set(advanced_format), [k : k in advanced_format | k notin Keys(advanced)], [k : k in Keys(advanced) | k notin advanced_format];
     output := Join([basics[k] : k in basic_format] cat [Sprintf("%o", advanced[k]) : k in advanced_format], "|");
-    Write("genera_advanced/" * label, output : Overwrite);
+    Write(LabelPath("genera_advanced", label : Create), output : Overwrite);
     return;
 end intrinsic;
