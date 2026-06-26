@@ -177,7 +177,7 @@ end function;
 
 intrinsic FillGenus(label::MonStgElt : timeout := 1800)
 {Fill the data for a genus and its lattice representatives, given files in the genera_basic format.}
-    data := Split(Split(Read("genera_basic/" * label), "\n")[1], "|");
+    data := Split(Split(Read(LabelPath("genera_basic", label)), "\n")[1], "|");
     basic_format := Split(Read("genera_basic.format"), "|");
     advanced_format := Split(Read("genera_advanced.format"), "|");
     hash_format := Split(Read("lat_hash.format"), "|");
@@ -341,7 +341,12 @@ intrinsic FillGenus(label::MonStgElt : timeout := 1800)
             theta, theta_prec, rep_theta_elapsed := ThetaSeriesIncremental(L, target_prec, to_per_rep);
             for p in Keys(rep_theta_elapsed) do
                 theta_elapsed[p] := IsDefined(theta_elapsed, p)
+                    // Maximum for worst case Hash computation.
+                    // Change to sum if we care about the average case
                     select Maximum(theta_elapsed[p], rep_theta_elapsed[p]) else rep_theta_elapsed[p];
+            end for;
+            for p in Keys(theta_elapsed) do
+                if not IsDefined(rep_theta_elapsed, p) then theta_elapsed[p] := Infinity(); end if;
             end for;
             lat["is_universal"] := "\\N";
             lat["is_even_universal"] := "\\N";
@@ -440,7 +445,7 @@ intrinsic FillGenus(label::MonStgElt : timeout := 1800)
     // We need to be able to look up hash functions for lattices that are not in the main
     // genus being processed.  So we write the hash function used to a separate file
     // so that it can be looked up when needed (see lookup_hash_function in connect_genus.m)
-    Write(Sprintf("genera_hash/%o", advanced["genus_hash"]), advanced["hash_function"] : Overwrite);
+    Write(LabelPath("genera_hash", n, s, advanced["genus_hash"] : Create), advanced["hash_function"] : Overwrite);
 
     // TODO: Compute ambient_lattice
 
@@ -459,16 +464,16 @@ intrinsic FillGenus(label::MonStgElt : timeout := 1800)
         Remove(~lat, "lattice");
         error if Keys(lat) ne Set(lat_format), [k : k in lat_format | k notin Keys(lat)], [k : k in Keys(lat) | k notin lat_format];
         output := Join([Sprintf("%o", to_postgres(lat[k])) : k in lat_format], "|");
-        Write("lattice_basic_data/" * lat["label"], output : Overwrite);
+        Write(LabelPath("lattice_basic_data", lat["label"] : Create), output : Overwrite);
 
     end for;
     // Now write hash data
     output := Join([Join([Sprintf("%o", to_postgres(lat[k])) : k in hash_format], "|") : lat in lats], "\n");
-    Write("lattice_hashes/" * advanced["genus_hash"], output : Overwrite);
+    Write(LabelPath("lattice_hashes", n, s, advanced["genus_hash"] : Create), output : Overwrite);
 
     error if Keys(basics) ne Set(basic_format), [k : k in basic_format | k notin Keys(basics)], [k : k in Keys(basics) | k notin basic_format];
     error if Keys(advanced) ne Set(advanced_format), [k : k in advanced_format | k notin Keys(advanced)], [k : k in Keys(advanced) | k notin advanced_format];
     output := Join([basics[k] : k in basic_format] cat [Sprintf("%o", advanced[k]) : k in advanced_format], "|");
-    Write("genera_advanced/" * label, output : Overwrite);
+    Write(LabelPath("genera_advanced", label : Create), output : Overwrite);
     return;
 end intrinsic;

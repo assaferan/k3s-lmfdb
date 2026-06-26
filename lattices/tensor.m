@@ -43,7 +43,8 @@ end intrinsic;
 
 intrinsic LoadLatticeLabels(sig::Tup, Dbound::RngIntElt) -> SeqEnum[MonStgElt]
 {}
-    base := Sprintf("lattice_basic_data/%o.%o/", sig[1], sig[2]);
+    // must match the directory LabelPath("lattice_basic_data", label) writes into
+    base := Sprintf("lattice_basic_data/%o/%o/", sig[1], sig[2]);   // sig = <rank, nplus>
     labels := TrimLabels(Split(Pipe("ls " * base, ""), "\n"), Dbound);
     SortLabels(~labels);
     return labels;
@@ -86,7 +87,7 @@ intrinsic LoadPrimitiveLattices(sig::Tup, Dbound::RngIntElt) -> Assoc
     gram_i := Index(format, "gram");
     scale_i := Index(format, "scale");
     for label in labels do
-        fname := Sprintf("lattice_basic_data/%o.%o/%o", sig[1], sig[2], label);
+        fname := LabelPath("lattice_basic_data", label);
         pieces := Split(Read(fname), "|");
         if pieces[scale_i] eq "1" then
             lats[label] := GramStringToLat(pieces[gram_i]);

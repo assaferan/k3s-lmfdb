@@ -32,12 +32,12 @@ timeout := StringToInteger(timeout);
 function representatives(label : timeout := 1800, alg := GenusRepresentatives)
     label_components := Split(label, ".");
     n := StringToInteger(label_components[1]);
-    s := StringToInteger(label_components[2]);
+    s := StringToInteger(label_components[2]);   // field 2 of the label is n_plus
     error if n ne s, "Not positive definite";
-    n_plus := (n + s) div 2;
-    n_minus := (n - s) div 2;
+    n_plus := s;             // already n_plus; do NOT use (n+s)/2 (that misreads it as signature)
+    n_minus := n - n_plus;
 
-    data := Split(Split(Read(Sprintf("genera_basic/sig_%o_%o/%o", n_plus, n_minus, label)), "\n")[1], "|");
+    data := Split(Split(Read(LabelPath("genera_basic", label)), "\n")[1], "|");
     basic_format := Split(Read("genera_basic.format"), "|");
     assert #data eq #basic_format;
     basics := AssociativeArray();

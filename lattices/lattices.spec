@@ -1,6 +1,7 @@
 {
     aut_char.mag
     canonical_form.m
+    create_label.m
     hash.m
     fill_genus.m
     connect_genus.m
