@@ -103,6 +103,32 @@ intrinsic ScaledAtomicName(L::Lat, catalog::SeqEnum) -> MonStgElt
     return atomic;
 end intrinsic;
 
+intrinsic NameAtomicLattices(DETCAP::RngIntElt) -> Assoc
+{The label -> name map for the named LatticeDatabase lattices -- and their integral
+ scalings up to determinant DETCAP -- that occur in our database.  Each catalog
+ lattice is located via its genus with FindLabel (much faster than testing every
+ lattice against the catalog).  Name collisions are resolved by family priority.}
+    catalog := CleanNamedLattices();
+    names := AssociativeArray();
+    prio  := AssociativeArray();
+    for t in catalog do
+        name := t[1];
+        Lp := PrimitiveIntegralForm(t[2]);
+        r := Rank(Lp);  d := Determinant(Lp);  p := NameFamilyPriority(name);
+        c := 1;
+        while d * c^r le DETCAP do
+            L := c eq 1 select Lp else LatticeWithGram(c * GramMatrix(Lp));
+            label := FindLabel(L);
+            if label ne "\\N" and ((not IsDefined(prio, label)) or p lt prio[label]) then
+                names[label] := c gt 1 select Sprintf("%o%o", c, name) else name;
+                prio[label] := p;
+            end if;
+            c +:= 1;
+        end while;
+    end for;
+    return names;
+end intrinsic;
+
 // --- Phase B: composing names of decomposable lattices ---------------------
 // Operator precedence (tightest first): scale prefix / *, then ^, then x, then +.
 

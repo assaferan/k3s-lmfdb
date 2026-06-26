@@ -475,7 +475,7 @@ intrinsic FillGenus(label::MonStgElt : timeout := 1800)
     // We need to be able to look up hash functions for lattices that are not in the main
     // genus being processed.  So we write the hash function used to a separate file
     // so that it can be looked up when needed (see lookup_hash_function in connect_genus.m)
-    Write(LabelPath("genera_hash", n, s, advanced["genus_hash"] : Create), advanced["hash_function"] : Overwrite);
+    Write(LabelPath("genera_hash", n, s, IntegerToString(advanced["genus_hash"]) : Create), advanced["hash_function"] : Overwrite);
 
     // TODO: Compute ambient_lattice
 

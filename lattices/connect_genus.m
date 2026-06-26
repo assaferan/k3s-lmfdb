@@ -21,7 +21,7 @@ function load_genus_data(genus_label)
 end function;
 
 function lookup_hash_function(genus_hash, rank, nplus)
-    fname := LabelPath("genera_hash", rank, nplus, genus_hash);
+    fname := LabelPath("genera_hash", rank, nplus, IntegerToString(genus_hash));
     if not OpenTest(fname, "r") then
         return "";
     end if;
@@ -30,7 +30,7 @@ end function;
 
 hash_format := Split(Split(Read("lat_hash.format"), "\n")[1], "|");
 function load_hash_data(genus_hash, rank, nplus : as_assoc:=true)
-    fname := LabelPath("lattice_hashes", rank, nplus, genus_hash); // Sprintf("lattice_hashes/%o", genus_hash);
+    fname := LabelPath("lattice_hashes", rank, nplus, IntegerToString(genus_hash));
     if not OpenTest(fname, "r") then
         if as_assoc then return AssociativeArray(); else return []; end if;
     end if;
