@@ -9,7 +9,7 @@ end intrinsic;
 function load_genus_data(genus_label)
     genus := AssociativeArray();
     for stage in ["basic", "advanced"] do
-        genus_data := Split(Split(Read("genera_"*stage*"/" * genus_label), "\n")[1], "|");
+        genus_data := Split(Split(Read(LabelPath("genera_"*stage, genus_label)), "\n")[1], "|");
         genus_format := Split(Read("genera_"*stage*".format"), "|");
         assert #genus_data eq #genus_format;
         for i in [1..#genus_data] do
@@ -20,8 +20,8 @@ function load_genus_data(genus_label)
     return genus;
 end function;
 
-function lookup_hash_function(genus_hash)
-    fname := Sprintf("genera_hash/%o", genus_hash);
+function lookup_hash_function(genus_hash, rank, nplus)
+    fname := LabelPath("genera_hash", rank, nplus, genus_hash);
     if not OpenTest(fname, "r") then
         return "";
     end if;
@@ -29,8 +29,8 @@ function lookup_hash_function(genus_hash)
 end function;
 
 hash_format := Split(Split(Read("lat_hash.format"), "\n")[1], "|");
-function load_hash_data(genus_hash : as_assoc:=true)
-    fname := Sprintf("lattice_hashes/%o", genus_hash); // TODO (David): should add folders
+function load_hash_data(genus_hash, rank, nplus : as_assoc:=true)
+    fname := LabelPath("lattice_hashes", rank, nplus, genus_hash); // Sprintf("lattice_hashes/%o", genus_hash);
     if not OpenTest(fname, "r") then
         if as_assoc then return AssociativeArray(); else return []; end if;
     end if;
@@ -67,13 +67,13 @@ intrinsic HashCache() -> Assoc
     return StoreGet(hash_cache, "cache");
 end intrinsic;
 
-intrinsic GetHashes(genus_hash::RngIntElt) -> Assoc
+intrinsic GetHashes(genus_hash::RngIntElt, rank::RngIntElt, nplus::RngIntElt) -> Assoc
 {Get an associative array with keys the possible hash values for lattices in the genus and values a sequence of strings matching the hash_format}
     cache := HashCache();
     if IsDefined(cache, genus_hash) then
         return cache[genus_hash];
     end if;
-    lats := load_hash_data(genus_hash);
+    lats := load_hash_data(genus_hash, rank, nplus);
     cache[genus_hash] := lats;
     StoreSet(hash_cache, "cache", cache);
     return lats;
@@ -82,7 +82,8 @@ end intrinsic;
 intrinsic FindGenusData(L::Lat) -> Tup
 {Given a lattice, find the hash of its genus and the hash function used for that genus}
     genus_hash := HashGenus(L);
-    hash_func := lookup_hash_function(genus_hash);
+    nplus := Signature(GramMatrix(L));
+    hash_func := lookup_hash_function(genus_hash, Rank(L), nplus);
     return <genus_hash, hash_func>;
 end intrinsic;
 
@@ -126,6 +127,30 @@ intrinsic LatSortKey(label::MonStgElt) -> Tup
     pieces := Split(label, ".");
     // Sort by: rank, then signature (pos def first), then absolute det, then the label string as tiebreaker
     return <StringToInteger(pieces[1]), -StringToInteger(pieces[2]), StringToInteger(pieces[3]), label>;
+end intrinsic;
+
+intrinsic LabelPath(folder::MonStgElt, rank::RngIntElt, nplus::RngIntElt, identifier::MonStgElt : Create := false) -> MonStgElt
+{The on-disk path "folder/rank/nplus/identifier" for a lattice identifier where
+the lattice has rank and nplus.  Centralises the data directory layout so that a
+ future change to the folder scheme only needs editing here.  If Create is true,
+ the containing directory is created (mkdir -p) so the path is ready to write to.}
+    dir := Sprintf("%o/%o/%o", folder, rank, nplus);
+    if Create then
+        System("mkdir -p " * dir);
+    end if;
+    return Sprintf("%o/%o", dir, identifier);
+end intrinsic;
+
+intrinsic LabelPath(folder::MonStgElt, label::MonStgElt : Create := false) -> MonStgElt
+{The on-disk path "folder/rank/nplus/label" for a lattice or genus label of the
+ form rank.nplus.det.... .  Centralises the data directory layout so that a
+ future change to the folder scheme only needs editing here.  If Create is true,
+ the containing directory is created (mkdir -p) so the path is ready to write to.}
+    pieces := Split(label, ".");
+    require #pieces ge 2 : "label must have the form rank.nplus....";
+    rank := StringToInteger(pieces[1]);
+    nplus := StringToInteger(pieces[2]);                   // label is rank.nplus.det.... (see create_genus_label)
+    return LabelPath(folder, rank, nplus, label : Create := Create);
 end intrinsic;
 
 intrinsic AutOrbits(L::Lat, A::GrpMat, vecs::SeqEnum) -> SeqEnum
@@ -459,7 +484,7 @@ intrinsic LoadVdat(labels::SeqEnum[MonStgElt]) -> SeqEnum[Tup]
 {Given a sequence of lattice labels, load Voronoi data as a sequence of tuples (covering norm, num deep holes, num deep hole orbits, num holes).  If any not available, return empty sequence instead}
     ans := [];
     for label in labels do
-        fname := "voronoi/" * label;
+        fname := LabelPath("voronoi", label);
         if not OpenTest(fname, "r") then
             return [];
         end if;
@@ -494,7 +519,7 @@ intrinsic LoadSVdat(labels::SeqEnum[MonStgElt]) -> SeqEnum
 {Given a sequence of lattice labels, load short-vector data for each as an associative array keyed by property name (minimum, shortest, is_well_rounded, ...), with booleans and integers parsed and "\N" denoting a missing value.  If any file is not available, return an empty sequence instead.}
     ans := [];
     for label in labels do
-        fname := "shortest/" * label;
+        fname := LabelPath("shortest", label);
         if not OpenTest(fname, "r") then
             return [];
         end if;
@@ -527,7 +552,7 @@ intrinsic ConnectGenus(label::MonStgElt : timeout := 1800)
     n := StringToInteger(genus["rank"]);
     s := StringToInteger(genus["nplus"]);
     scale := StringToInteger(genus["scale"]);
-    lats := load_hash_data(label : as_assoc:=false);
+    lats := load_hash_data(HashGenus(GenusSymbolFromLabel(label)), n, s : as_assoc:=false);
     if #lats gt 0 then
         to_per_rep := timeout div #lats + 1;
     end if;
@@ -588,7 +613,7 @@ intrinsic ConnectGenus(label::MonStgElt : timeout := 1800)
             if success then
                 lat["covering_norm_num"], lat["covering_norm_den"], lat["deep_holes"], lat["deep_hole_count"], lat["deep_hole_orbit_count"], lat["hole_count"] := Explode(vdat);
                 // We write the data to a file for loading in the decomposable case
-                Write("voronoi/" * label, Sprintf("%o|%o|%o|%o|%o", lat["covering_norm_num"], lat["covering_norm_den"], lat["deep_hole_count"], lat["deep_hole_orbit_count"], lat["hole_count"]));
+                Write(LabelPath("voronoi", label : Create), Sprintf("%o|%o|%o|%o|%o", lat["covering_norm_num"], lat["covering_norm_den"], lat["deep_hole_count"], lat["deep_hole_orbit_count"], lat["hole_count"]));
             end if;
 
             has_sv, S, elapsed := TimeoutCall(timeout, ShortestVectors, <L>, 1); 
@@ -629,7 +654,7 @@ intrinsic ConnectGenus(label::MonStgElt : timeout := 1800)
                         assert lat["is_perfect"] eq (lat["perfection_defect"] eq 0);
                     end if;
                 end if;
-                Write("shortest/" * label, Sprintf("%o|%o|%o|%o|%o|%o|%o|%o|%o|%o|%o", Minimum(L), lat["shortest"], lat["is_well_rounded"], lat["is_minimal_vector_generated"], lat["is_strongly_well_rounded"], lat["is_eutactic"], lat["is_strongly_eutactic"], lat["t_design"], lat["perfection_defect"], lat["is_perfect"], lat["is_strongly_perfect"]));
+                Write(LabelPath("shortest", label : Create), Sprintf("%o|%o|%o|%o|%o|%o|%o|%o|%o|%o|%o", Minimum(L), lat["shortest"], lat["is_well_rounded"], lat["is_minimal_vector_generated"], lat["is_strongly_well_rounded"], lat["is_eutactic"], lat["is_strongly_eutactic"], lat["t_design"], lat["perfection_defect"], lat["is_perfect"], lat["is_strongly_perfect"]));
             end if;
         else
             vdat := LoadVdat(lat["orthogonal_factors"]);
@@ -758,6 +783,6 @@ intrinsic ConnectGenus(label::MonStgElt : timeout := 1800)
         Remove(~lat, "gram");
         error if Keys(lat) ne Set(advanced_format), [k : k in advanced_format | k notin Keys(lat)], [k : k in Keys(lat) | k notin advanced_format];
         output := Join([Sprintf("%o", to_postgres(lat[k])) : k in advanced_format], "|");
-        Write("lattice_advanced_data/" * lat["label"], output : Overwrite);
+        Write(LabelPath("lattice_advanced_data", lat["label"] : Create), output : Overwrite);
     end for;
 end intrinsic;
