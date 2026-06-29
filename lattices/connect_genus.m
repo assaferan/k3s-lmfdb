@@ -1,3 +1,4 @@
+declare verbose ConnectGenus, 1;
 
 intrinsic GramStringToLat(s::MonStgElt, n::RngIntElt) -> Lat
 {Given a string encoding the entries of an n x n Gram matrix, return the corresponding lattice}

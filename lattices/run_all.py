@@ -138,7 +138,12 @@ def parallel(jobfile, joblog, magma_args, colsep=None):
     if colsep is not None:
         cmd += ["--colsep", colsep]
     cmd += ["magma", "-b"] + magma_args
-    subprocess.run(cmd, check=True)
+    # GNU parallel returns the number of failed jobs; don't abort the pipeline on
+    # per-job failures -- log a warning and continue (the joblog records which
+    # jobs failed so they can be retried).
+    result = subprocess.run(cmd)
+    if result.returncode != 0:
+        print(f"  WARNING: {result.returncode} job(s) failed (see {joblog}); continuing", flush=True)
 
 def main():
     if not args.skip_list_genera:

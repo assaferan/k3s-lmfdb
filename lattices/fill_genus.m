@@ -219,6 +219,7 @@ intrinsic FillGenus(label::MonStgElt : timeout := 1800)
     advanced["class_number"] := "\\N";
     advanced["adjacency_matrix"] := "\\N";
     advanced["adjacency_polynomials"] := "\\N";
+    advanced["ambient_lattice"] := "\\N";   // TODO: compute the ambient lattice
     if genus_success then
         reps := reps[1];
         vprintf FillGenus, 1 : "Number of genus representatives: %o\n", #reps;

@@ -14,7 +14,7 @@ end intrinsic;
 
 intrinsic HashGenus(L::Lat) -> RngIntElt
 {Compute the hash value associated to the genus of the given lattice}
-    return Hash(Genus(L));
+    return HashGenus(Genus(L));   // the custom SymGen hash, matching what is stored
 end intrinsic;
 
 intrinsic ThetaHash(theta_series::SeqEnum[RngIntElt], genus_hash::RngIntElt, prec::RngIntElt) -> RngIntElt
@@ -142,7 +142,9 @@ intrinsic SetHashes(~lats::SeqEnum[Assoc], ~genus::Assoc, theta_elapsed::Assoc, 
         success, res, elapsed := TimeoutCall(timeout, BVhashes, <lattices, genus_hash, m>, 1);
         if success then
             dcount := #{h : h in res};
-            Append(~hash_opts, <-dcount, elapsed, Sprintf("BV%o", m)>);
+            // theta_elapsed holds reals, so coerce this elapsed (a string from
+            // TimeoutCall) to match the hash_opts tuple universe.
+            Append(~hash_opts, <-dcount, StringToReal(elapsed), Sprintf("BV%o", m)>);
             BVvals[m] := res;
             if dcount eq #lats then
                 break;
@@ -159,7 +161,7 @@ intrinsic SetHashes(~lats::SeqEnum[Assoc], ~genus::Assoc, theta_elapsed::Assoc, 
     genus["is_hash_distinguished"] := (best[1] eq -#lats);
     genus["hash_function"] := best[3];
     code := best[3][1..2];
-    m := StringToInteger(best[3][3..#best]);
+    m := StringToInteger(best[3][3..#best[3]]);   // #best[3] (string length), not #best (tuple arity)
     if code eq "BV" then
         vals := BVvals[m];
     elif code eq "Th" then
