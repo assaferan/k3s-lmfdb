@@ -606,8 +606,11 @@ def create_genus_entry(genus_symbol):
     table_row['level'] = level = genus_symbol.level()
     table_row['is_even'] = genus_symbol.is_even()
     disc_form = genus_symbol.discriminant_form() # Timing: this was slow
-    table_row['discriminant_group_invs'] = disc_form.invariants()
-    table_row['discriminant_group_exponent'] = table_row['discriminant_group_invs'][-1]
+    invs = disc_form.invariants()
+    table_row['discriminant_group_invs'] = invs
+    # the trivial discriminant group (e.g. unimodular lattices) has no invariants;
+    # its exponent is 1
+    table_row['discriminant_group_exponent'] = invs[-1] if invs else 1
     disc_q = disc_form.gram_matrix_quadratic()
     den = disc_q.denominator()
     table_row['discriminant_form'] = (den*disc_q).list()

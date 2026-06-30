@@ -253,6 +253,7 @@ intrinsic LatticeName(label::MonStgElt, ortho_factors::SeqEnum, ortho_mults::Seq
     if IsDefined(atomic_names, label) then return atomic_names[label]; end if;
 
     factor_name := function(f)
+        if f eq "\\N" then return "\\N"; end if;   // a factor not in the database
         if IsDefined(atomic_names, f) then return atomic_names[f]; end if;
         path := LabelPath("lattice_advanced_data", f);
         if not OpenTest(path, "r") then return "\\N"; end if;

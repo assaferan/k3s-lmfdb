@@ -9,9 +9,16 @@ end intrinsic;
 
 function load_genus_data(genus_label)
     genus := AssociativeArray();
+    basic_format := Split(Split(Read("genera_basic.format"), "\n")[1], "|");
+    adv_format   := Split(Split(Read("genera_advanced.format"), "\n")[1], "|");
+    // The genera_advanced file is written by FillGenus with both the basic and
+    // advanced genus fields, so read it with the combined format.
+    stage_format := AssociativeArray();
+    stage_format["basic"] := basic_format;
+    stage_format["advanced"] := basic_format cat adv_format;
     for stage in ["basic", "advanced"] do
         genus_data := Split(Split(Read(LabelPath("genera_"*stage, genus_label)), "\n")[1], "|");
-        genus_format := Split(Read("genera_"*stage*".format"), "|");
+        genus_format := stage_format[stage];
         assert #genus_data eq #genus_format;
         for i in [1..#genus_data] do
             genus[genus_format[i]] := genus_data[i];
@@ -125,6 +132,9 @@ end intrinsic;
 
 intrinsic LatSortKey(label::MonStgElt) -> Tup
 {A tuple that sorts how we want lattices to sort}
+    // A summand not found in the database (e.g. out of range) has label "\N";
+    // sort those first and keep them as their own group.
+    if label eq "\\N" then return <0, 0, 0, label>; end if;
     pieces := Split(label, ".");
     // Sort by: rank, then signature (pos def first), then absolute det, then the label string as tiebreaker
     return <StringToInteger(pieces[1]), -StringToInteger(pieces[2]), StringToInteger(pieces[3]), label>;
@@ -492,6 +502,7 @@ intrinsic LoadVdat(labels::SeqEnum[MonStgElt]) -> SeqEnum[Tup]
 {Given a sequence of lattice labels, load Voronoi data as a sequence of tuples (covering norm, num deep holes, num deep hole orbits, num holes).  If any not available, return empty sequence instead}
     ans := [];
     for label in labels do
+        if label eq "\\N" then return []; end if;   // a factor not in the database
         fname := LabelPath("voronoi", label);
         if not OpenTest(fname, "r") then
             return [];
@@ -534,6 +545,7 @@ intrinsic LoadSVdat(labels::SeqEnum[MonStgElt]) -> SeqEnum
 {Given a sequence of lattice labels, load short-vector data for each as an associative array keyed by property name (minimum, shortest, is_well_rounded, ...), with booleans and integers parsed and "\N" denoting a missing value.  If any file is not available, return an empty sequence instead.}
     ans := [];
     for label in labels do
+        if label eq "\\N" then return []; end if;   // a factor not in the database
         fname := LabelPath("shortest", label);
         if not OpenTest(fname, "r") then
             return [];
@@ -604,7 +616,7 @@ intrinsic ConnectGenus(label::MonStgElt : timeout := 1800)
         summands := OrthogonalDecompositionFaster(L);
         lat["is_indecomposable"] := (#summands eq 1);
         summand_labels := [FindLabel(M) : M in summands];
-        collected := CountFibers(summand_labels, LatSortKey);
+        collected := CountFibers(summand_labels, func<x | LatSortKey(x)>);   // CountFibers wants a UserProgram, not an intrinsic
         lat["orthogonal_factors"] := [fib[1][4] : fib in collected];
         lat["orthogonal_multiplicities"] := [fib[2] : fib in collected];
         lat["name"] := LatticeName(lat["label"], lat["orthogonal_factors"],
