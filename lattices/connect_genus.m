@@ -37,32 +37,46 @@ function lookup_hash_function(genus_hash, rank, nplus)
 end function;
 
 hash_format := Split(Split(Read("lat_hash.format"), "\n")[1], "|");
-function load_hash_data(genus_hash, rank, nplus : as_assoc:=true)
+// Read a genus's lattice-hash file into raw split-field rows.
+// NB: these two loaders are kept monomorphic (one returns Assoc, the other
+// SeqEnum) on purpose -- a single function with a polymorphic return type
+// (as_assoc controlling Assoc vs SeqEnum) makes the Magma package compiler
+// reject any intrinsic that calls it more than once with "bad syntax".
+function load_hash_rows(genus_hash, rank, nplus)
     fname := LabelPath("lattice_hashes", rank, nplus, IntegerToString(genus_hash));
-    if not OpenTest(fname, "r") then
-        if as_assoc then return AssociativeArray(); else return []; end if;
-    end if;
-    hash_data := [Split(line, "|") : line in Split(Read(fname), "\n")];
-    assert &and[#dat eq #hash_format : dat in hash_data];
-    if as_assoc then
-        hash_pos := Index(hash_format, "hash");
-        lats := AssociativeArray(:Default:=[]);
-        for lat in hash_data do
-            h := StringToInteger(lat[hash_pos]);
-            Append(~lats[h], lat);
-        end for;
-    else
-        lats := [];
-        for dat in hash_data do
-            lat := AssociativeArray();
-            for i in [1..#dat] do
-                lat[hash_format[i]] := dat[i];
-                if dat[i] eq "None" then lat[hash_format[i]] := "\\N"; end if;
-            end for;
-            Append(~lats, lat);
-        end for;
-    end if;
+    if not OpenTest(fname, "r") then return []; end if;
+    hash_format := Split(Split(Read("lat_hash.format"), "\n")[1], "|");
+    rows := [Split(line, "|") : line in Split(Read(fname), "\n")];
+    assert &and[#row eq #hash_format : row in rows];
+    return rows;
+end function;
+
+// Group the lattices in a genus by their per-lattice hash value.
+// Returns Assoc: hash value -> sequence of raw split-field rows.
+function load_hash_by_hash(genus_hash, rank, nplus)
+    hash_format := Split(Split(Read("lat_hash.format"), "\n")[1], "|");
+    hash_pos := Index(hash_format, "hash");
+    lats := AssociativeArray();
+    for row in load_hash_rows(genus_hash, rank, nplus) do
+        h := StringToInteger(row[hash_pos]);
+        if IsDefined(lats, h) then Append(~lats[h], row); else lats[h] := [row]; end if;
+    end for;
     return lats;
+end function;
+
+// Return the lattices in a genus as a sequence of field-name -> value records.
+function load_hash_records(genus_hash, rank, nplus)
+    hash_format := Split(Split(Read("lat_hash.format"), "\n")[1], "|");
+    recs := [];
+    for row in load_hash_rows(genus_hash, rank, nplus) do
+        lat := AssociativeArray();
+        for i in [1..#row] do
+            lat[hash_format[i]] := row[i];
+            if row[i] eq "None" then lat[hash_format[i]] := "\\N"; end if;
+        end for;
+        Append(~recs, lat);
+    end for;
+    return recs;
 end function;
 
 hash_cache := NewStore();
@@ -70,7 +84,7 @@ hash_cache := NewStore();
 intrinsic HashCache() -> Assoc
 {Get an associative array for caching lattices by genus and hash value}
     if not StoreIsDefined(hash_cache, "cache") then
-        StoreSet(hash_cache, "cache", AssociativeArray(:Default:=AssociativeArray()));
+        StoreSet(hash_cache, "cache", AssociativeArray());
     end if;
     return StoreGet(hash_cache, "cache");
 end intrinsic;
@@ -81,7 +95,7 @@ intrinsic GetHashes(genus_hash::RngIntElt, rank::RngIntElt, nplus::RngIntElt) ->
     if IsDefined(cache, genus_hash) then
         return cache[genus_hash];
     end if;
-    lats := load_hash_data(genus_hash, rank, nplus);
+    lats := load_hash_by_hash(genus_hash, rank, nplus);
     cache[genus_hash] := lats;
     StoreSet(hash_cache, "cache", cache);
     return lats;
@@ -575,19 +589,29 @@ intrinsic ConnectGenus(label::MonStgElt : timeout := 1800)
 {Fill in lattice data that requires working with lattices in different genera}
     SetColumns(0);
     advanced_format := Split(Split(Read("lat_advanced.format"), "\n")[1], "|");
+    basic_format := Split(Split(Read("lat_basic.format"), "\n")[1], "|");
     atomic_names := LoadAtomicNames();              // stage-4 atomic names (run_basic_names)
     name_i := Index(advanced_format, "name");
     genus := load_genus_data(label);
     n := StringToInteger(genus["rank"]);
     s := StringToInteger(genus["nplus"]);
     scale := StringToInteger(genus["scale"]);
-    lats := load_hash_data(HashGenus(GenusSymbolFromLabel(label)), n, s : as_assoc:=false);
+    lats := load_hash_records(HashGenus(GenusSymbolFromLabel(label)), n, s);
     if #lats gt 0 then
         to_per_rep := timeout div #lats + 1;
     end if;
 
     for i in [1..#lats] do
         lat := lats[i];
+        // The hash records only carry label|hash|minimum|gram; ConnectGenus needs
+        // basic fields (aut_group, is_even, ...) computed in FillGenus, so merge in
+        // the full basic record (without clobbering the hash fields).
+        basic_pieces := Split(Split(Read(LabelPath("lattice_basic_data", lat["label"])), "\n")[1], "|");
+        for j in [1..#basic_format] do
+            if not IsDefined(lat, basic_format[j]) then
+                lat[basic_format[j]] := basic_pieces[j];
+            end if;
+        end for;
         L := GramStringToLat(lat["gram"], n);
         D := Dual(L);
 
@@ -622,7 +646,7 @@ intrinsic ConnectGenus(label::MonStgElt : timeout := 1800)
         lat["name"] := LatticeName(lat["label"], lat["orthogonal_factors"],
                                    lat["orthogonal_multiplicities"], atomic_names, name_i);
 
-        for col in ["covering_norm", "deep_holes", "deep_hole_count", "deep_hole_orbit_count", "hole_count"] do
+        for col in ["covering_norm_num", "covering_norm_den", "deep_holes", "deep_hole_count", "deep_hole_orbit_count", "hole_count"] do
             lat[col] := "\\N"; // Overwritten below if possible
         end for;
         for col in ["shortest", "is_well_rounded", "is_minimal_vector_generated", "is_strongly_well_rounded", "is_eutactic", "is_strongly_eutactic", "t_design", "perfection_defect", "is_perfect", "is_strongly_perfect"] do
@@ -751,7 +775,7 @@ intrinsic ConnectGenus(label::MonStgElt : timeout := 1800)
             lat["is_additively_indecomposable"] := "\\N";
         end if;
 
-        if lat["is_even"] then
+        if lat["is_even"] eq "T" then
             lat["even_sublattice"] := "\\N";
         else
             lat["even_sublattice"] := FindLabel(EvenSublattice(L));
@@ -801,8 +825,12 @@ intrinsic ConnectGenus(label::MonStgElt : timeout := 1800)
         */
 
 
-        // Remove gram since it's not in lat_advanced.format
-        Remove(~lat, "gram");
+        // lat carries input fields not in lat_advanced.format (the hash record's
+        // gram/hash/minimum and the basic fields merged in above); drop them so
+        // only the advanced columns remain.
+        for k in Keys(lat) do
+            if k notin advanced_format then Remove(~lat, k); end if;
+        end for;
         error if Keys(lat) ne Set(advanced_format), [k : k in advanced_format | k notin Keys(lat)], [k : k in Keys(lat) | k notin advanced_format];
         output := Join([Sprintf("%o", to_postgres(lat[k])) : k in advanced_format], "|");
         Write(LabelPath("lattice_advanced_data", lat["label"] : Create), output : Overwrite);

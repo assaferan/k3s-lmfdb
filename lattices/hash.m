@@ -141,6 +141,7 @@ intrinsic SetHashes(~lats::SeqEnum[Assoc], ~genus::Assoc, theta_elapsed::Assoc, 
         // TODO: if there are too many vectors of norm up to m we can bail before calling BVhashes
         success, res, elapsed := TimeoutCall(timeout, BVhashes, <lattices, genus_hash, m>, 1);
         if success then
+            res := res[1];   // TimeoutCall wraps the results in a List; unwrap to the hash sequence
             dcount := #{h : h in res};
             // theta_elapsed holds reals, so coerce this elapsed (a string from
             // TimeoutCall) to match the hash_opts tuple universe.
