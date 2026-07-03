@@ -58,6 +58,9 @@ function load_hash_by_hash(genus_hash, rank, nplus)
     hash_pos := Index(hash_format, "hash");
     lats := AssociativeArray();
     for row in load_hash_rows(genus_hash, rank, nplus) do
+        // Indefinite lattices have no per-lattice hash (theta/BV hashing does not
+        // apply), so their hash column is "\N"; skip them rather than crash.
+        if row[hash_pos] eq "\\N" then continue; end if;
         h := StringToInteger(row[hash_pos]);
         if IsDefined(lats, h) then Append(~lats[h], row); else lats[h] := [row]; end if;
     end for;
@@ -181,10 +184,16 @@ end intrinsic;
 intrinsic AutOrbits(L::Lat, A::GrpMat, vecs::SeqEnum) -> SeqEnum
 {Given a lattice L, an automorphism group A of L and a sequence of vectors which is invariant under the action of A (which could be LatElts or ModTupFldElts), return orbit representatives for the action of A on vecs}
     // This assumes A is in GL_n(Z), with respect to the basis of the lattice
-    // created with NaturalAction = false
+    // created with NaturalAction = false.  vecs may be LatElts (e.g. shortest
+    // vectors, whose coordinates come from Coordinates) or ModTupFldElts (e.g.
+    // deep holes, which are already coordinate vectors); reduce both to their
+    // coordinate vectors and match the group action there, so we never mix types.
+    coord := func<v | Type(v) eq LatElt select Vector(Rationals(), Coordinates(v))
+                                          else  Vector(Rationals(), Eltseq(v))>;
+    cvecs := [coord(v) : v in vecs];
+    gens := [ChangeRing(g, Rationals()) : g in Generators(A)];
     Sn := Sym(#vecs);
-    perms := [Sn![Index(vecs, Coordelt(L,Eltseq(Vector(Coordinates(v))*g)))
-		 : v in vecs] : g in Generators(A)];
+    perms := [Sn![Index(cvecs, cvecs[i]*g) : i in [1..#vecs]] : g in gens];
     A_perm := sub<Sn|perms>;
     orb_reps := OrbitRepresentatives(A_perm);
     // We throw away the orbit sizes, and replace the index of the
@@ -192,7 +201,7 @@ intrinsic AutOrbits(L::Lat, A::GrpMat, vecs::SeqEnum) -> SeqEnum
     return [vecs[o[2]] : o in orb_reps];
 end intrinsic;
 
-intrinsic VoronoiData(L::Lat, A::GrpMat) -> FldRatElt, SeqEnum[ModTupFldElt], RngIntElt, RngIntElt, RngIntElt
+intrinsic VoronoiData(L::Lat, A::GrpMat) -> RngIntElt, RngIntElt, SeqEnum[ModTupFldElt], RngIntElt, RngIntElt, RngIntElt
 {Given a lattice L and its automorphism group A, find the covering norm, orbit representatives for the deep holes, the number of deep holes, the number of deep hole orbits, and the number of holes}
     cn := CoveringRadius(L);
     cnn := Numerator(cn);
@@ -575,7 +584,7 @@ intrinsic LoadSVdat(labels::SeqEnum[MonStgElt]) -> SeqEnum
     return ans;
 end intrinsic;
 
-intrinsic TimeoutAssign(~D::Assoc, key::MonStgElt, func::UserProgram, inp::Tup, timeout::RngIntElt : Parameters := [])
+intrinsic TimeoutAssign(~D::Assoc, key::MonStgElt, func::Program, inp::Tup, timeout::RngIntElt : Parameters := [])
 {Compute value using given function, then store in D}
     success, out, elapsed := TimeoutCall(timeout, func, inp, 1 : Parameters := Parameters);
     if success then
@@ -583,6 +592,19 @@ intrinsic TimeoutAssign(~D::Assoc, key::MonStgElt, func::UserProgram, inp::Tup, 
     else
         D[key] := "\\N";
     end if;
+end intrinsic;
+
+intrinsic ShortestVectorCoords(L::Lat) -> SeqEnum
+{The coordinate sequences of the shortest vectors of L (up to sign). Returns plain
+ integer sequences rather than lattice vectors so the result can be serialized
+ across a TimeoutCall fork.}
+    return [Eltseq(v) : v in ShortestVectors(L)];
+end intrinsic;
+
+intrinsic AutOrbitCoords(L::Lat, A::GrpMat, vecs::SeqEnum) -> SeqEnum
+{As AutOrbits, but returns the coordinate sequences of the orbit representatives
+ (serializable across a TimeoutCall fork).}
+    return [Eltseq(v) : v in AutOrbits(L, A, vecs)];
 end intrinsic;
 
 intrinsic ConnectGenus(label::MonStgElt : timeout := 1800)
@@ -596,7 +618,14 @@ intrinsic ConnectGenus(label::MonStgElt : timeout := 1800)
     n := StringToInteger(genus["rank"]);
     s := StringToInteger(genus["nplus"]);
     scale := StringToInteger(genus["scale"]);
-    lats := load_hash_records(HashGenus(GenusSymbolFromLabel(label)), n, s);
+    // Geometric invariants (minimum, shortest vectors, density, Voronoi data, the
+    // orthogonal decomposition, root/norm-1 sublattices) require a positive
+    // definite form; indefinite lattices (nplus < rank) leave them all "\N".
+    definite := (s eq n);
+    // Use the genus hash stored by FillGenus (which located the hash file); do not
+    // recompute it via HashGenus(GenusSymbolFromLabel(label)), which does not
+    // round-trip for some genera (e.g. 2-adic symbols) and would miss the file.
+    lats := load_hash_records(StringToInteger(genus["genus_hash"]), n, s);
     if #lats gt 0 then
         to_per_rep := timeout div #lats + 1;
     end if;
@@ -615,11 +644,20 @@ intrinsic ConnectGenus(label::MonStgElt : timeout := 1800)
         L := GramStringToLat(lat["gram"], n);
         D := Dual(L);
 
+        // Default every advanced column to "\N"; the computations below overwrite
+        // the ones that apply (most are definite-only, so indefinite lattices keep
+        // the defaults).
+        for col in advanced_format do
+            if not IsDefined(lat, col) then lat[col] := "\\N"; end if;
+        end for;
+
         lat["dual_det"] := Determinant(D);
         lat["dual_label"] := FindLabel(D);
-        lat["dual_density"] := Density(D);
-        lat["dual_hermite"] := HermiteNumber(D);
-        lat["dual_kissing"] := KissingNumber(D);
+        if definite then
+            lat["dual_density"] := Density(D);
+            lat["dual_hermite"] := HermiteNumber(D);
+            lat["dual_kissing"] := KissingNumber(D);
+        end if;
         // dual_theta_series / dual_theta_prec are computed and stored in FillGenus
         // (lat_basic.format), so they are not recomputed here.
 
@@ -634,9 +672,10 @@ intrinsic ConnectGenus(label::MonStgElt : timeout := 1800)
         if scale eq 1 then
             lat["primitive_scaling"] := "\\N";
         else
-            lat["primitive_scaling"] := FindLabel(LatticeWithGram(GramMatrix(L) div scale));
+            lat["primitive_scaling"] := FindLabel(LatticeWithGram(GramMatrix(L) div scale : CheckPositive := false));
         end if;
 
+        if definite then
         summands := OrthogonalDecompositionFaster(L);
         lat["is_indecomposable"] := (#summands eq 1);
         summand_labels := [FindLabel(M) : M in summands];
@@ -655,19 +694,21 @@ intrinsic ConnectGenus(label::MonStgElt : timeout := 1800)
         if lat["is_indecomposable"] then
             aut_group := (lat["aut_group"] cmpne "\\N") select StringToGroup(lat["aut_group"]) else 0;
             // In addition to the timeout, we may want to impose a rank limit
-            success, vdat, elapsed := TimeoutCall(timeout, VoronoiData, <L, aut_group>, 5);
+            success, vdat, elapsed := TimeoutCall(timeout, VoronoiData, <L, aut_group>, 6);
             if success then
                 lat["covering_norm_num"], lat["covering_norm_den"], lat["deep_holes"], lat["deep_hole_count"], lat["deep_hole_orbit_count"], lat["hole_count"] := Explode(vdat);
                 // We write the data to a file for loading in the decomposable case
                 SaveVdat(lat);
             end if;
 
-            has_sv, S, elapsed := TimeoutCall(timeout, ShortestVectors, <L>, 1);
+            has_sv, S, elapsed := TimeoutCall(timeout, ShortestVectorCoords, <L>, 1);
             if has_sv then
-                // magma returns representatives up to +-
-                half := S[1];
+                // magma returns representatives up to +-; ShortestVectorCoords
+                // returns coordinate sequences (lattice vectors are not
+                // serializable across the TimeoutCall fork), so rebuild them in L
+                half := [L ! c : c in S[1]];
                 S := half cat [-v : v in half];
-                TimeoutAssign(~lat, "shortest", AutOrbits, <L, aut_group, S>, timeout);
+                TimeoutAssign(~lat, "shortest", AutOrbitCoords, <L, aut_group, S>, timeout);
                 TimeoutAssign(~lat, "is_well_rounded", IsWellRounded, <L, S>, timeout);
                 TimeoutAssign(~lat, "is_minimal_vector_generated", IsMinimalVectorGenerated, <L, S>, timeout);
                 TimeoutAssign(~lat, "is_strongly_well_rounded", IsStronglyWellRounded, <L, S>, timeout);
@@ -764,6 +805,7 @@ intrinsic ConnectGenus(label::MonStgElt : timeout := 1800)
                 // left as "\N" here.
             end if;
         end if;
+        end if;   // definite: orthogonal decomposition / Voronoi / shortest vectors
 
         // Decided when the theory is complete (rank <= 8, disc 2, Plesken III.1, ...);
         // discriminant 3-5 and the general high-rank case are left as "\N".
@@ -781,6 +823,7 @@ intrinsic ConnectGenus(label::MonStgElt : timeout := 1800)
             lat["even_sublattice"] := FindLabel(EvenSublattice(L));
         end if;
 
+        if definite then
         sv1 := ShortVectors(L, 1, 1);
         R1 := sub<L|[x[1] : x in sv1]>;
         lat["norm1_rank"] := Rank(R1);
@@ -793,12 +836,13 @@ intrinsic ConnectGenus(label::MonStgElt : timeout := 1800)
         sv2 := ShortVectors(L, 1, 2);
         R := sub<L|[x[1] : x in sv2]>;
         lat["root_sublattice"] := RootString(R);
-    
+
         if Rank(R) eq 0 or Rank(R) eq n then
             lat["root_complement"] := "\\N";
         else
             lat["root_complement"] := FindLabel(OrthogonalComplementFaster(L, R));
         end if;
+        end if;   // definite: norm-1 and root sublattices
 
         lat["is_algebraic"] := "\\N"; // TODO Eran: We are not sure about what to do here - see below.
         /*

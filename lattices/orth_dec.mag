@@ -17,7 +17,13 @@ end intrinsic;
 
 intrinsic OrthogonalComplementFaster(L::Lat, sub::Lat) -> Lat
 {Return the orthogonal complement of the sublattice sub in L.}
-    return sub<L | orth_comp(Basis(L), Basis(sub))>;
+    // Work in the coordinate space carrying L's Gram as its inner product, so the
+    // complement is orthogonal with respect to L's inner product. (RSpace(L) uses
+    // the standard inner product, and Basis(L) is a sequence, not a module.)
+    rs := RSpace(Integers(), Degree(L), GramMatrix(L));
+    subM := sub<rs | [rs ! Eltseq(b) : b in Basis(sub)]>;
+    oc := orth_comp(rs, subM);
+    return sub<L | [L ! Eltseq(w) : w in Basis(oc)]>;
 end intrinsic;
 
 // this is an example
@@ -141,7 +147,15 @@ function root_string_from_rs(R)
   od := orth_dec(R);
   root_str := "";
   for rl in od do
-    if Rank(rl) in [6..8] and Determinant(rl) eq 9-Rank(rl) then
+    if Rank(rl) eq 0 then
+      // a lattice with no roots contributes no component to the root system
+      continue;
+    elif Rank(rl) eq 1 and Determinant(rl) eq 1 then
+      // a norm-1 vector contributes the rank-1 odd lattice with Gram [1], named Z
+      // (A1 has Gram [2]); it has no Cartan matrix, so append it directly
+      root_str *:= "Z";
+      continue;
+    elif Rank(rl) in [6..8] and Determinant(rl) eq 9-Rank(rl) then
       str := Sprintf("E%o",Rank(rl));
     elif Rank(rl) ge 4 and Determinant(rl) eq 4 then
       str := Sprintf("D%o",Rank(rl));
