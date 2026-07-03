@@ -9,7 +9,12 @@ end intrinsic;
 
 intrinsic HashGenus(G::SymGen) -> RngIntElt
 {Compute the hash value associated to the genus of the given lattice}
-    return CollapseIntList(StringToBytes(ConwaySymbol(G)));
+    // Hash the canonical LMFDB genus label, not ConwaySymbol(G): equal genera can
+    // have different Conway-symbol strings (e.g. a 2-adic oddity prints as "_1"
+    // from Genus(L) but "_{I}" from GenusSymbolFromLabel), which broke the
+    // label -> hash round-trip.  CreateGenusLabel is canonical, so
+    // HashGenus(Genus(L)) = HashGenus(GenusSymbolFromLabel(LabelOf(L))).
+    return CollapseIntList(StringToBytes(CreateGenusLabel(G)));
 end intrinsic;
 
 intrinsic HashGenus(L::Lat) -> RngIntElt

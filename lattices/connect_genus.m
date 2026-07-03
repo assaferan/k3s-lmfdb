@@ -614,18 +614,19 @@ intrinsic ConnectGenus(label::MonStgElt : timeout := 1800)
     basic_format := Split(Split(Read("lat_basic.format"), "\n")[1], "|");
     atomic_names := LoadAtomicNames();              // stage-4 atomic names (run_basic_names)
     name_i := Index(advanced_format, "name");
-    genus := load_genus_data(label);
-    n := StringToInteger(genus["rank"]);
-    s := StringToInteger(genus["nplus"]);
-    scale := StringToInteger(genus["scale"]);
+    // Everything ConnectGenus needs is determined by the label: rank and nplus are
+    // its first two components, and the genus (hence its hash) is recovered by
+    // GenusSymbolFromLabel.  HashGenus is canonical, so this reproduces the hash
+    // FillGenus used to name the lattice_hashes file; scale is the gcd of each
+    // lattice's Gram entries (computed in the loop below).
+    sl := Split(label, ".");
+    n := StringToInteger(sl[1]);
+    s := StringToInteger(sl[2]);
     // Geometric invariants (minimum, shortest vectors, density, Voronoi data, the
     // orthogonal decomposition, root/norm-1 sublattices) require a positive
     // definite form; indefinite lattices (nplus < rank) leave them all "\N".
     definite := (s eq n);
-    // Use the genus hash stored by FillGenus (which located the hash file); do not
-    // recompute it via HashGenus(GenusSymbolFromLabel(label)), which does not
-    // round-trip for some genera (e.g. 2-adic symbols) and would miss the file.
-    lats := load_hash_records(StringToInteger(genus["genus_hash"]), n, s);
+    lats := load_hash_records(HashGenus(GenusSymbolFromLabel(label)), n, s);
     if #lats gt 0 then
         to_per_rep := timeout div #lats + 1;
     end if;
@@ -642,6 +643,7 @@ intrinsic ConnectGenus(label::MonStgElt : timeout := 1800)
             end if;
         end for;
         L := GramStringToLat(lat["gram"], n);
+        scale := GCD([Integers() | x : x in Eltseq(GramMatrix(L))]);   // = gcd(rep), a genus invariant
         D := Dual(L);
 
         // Default every advanced column to "\N"; the computations below overwrite

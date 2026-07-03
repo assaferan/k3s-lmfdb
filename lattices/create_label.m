@@ -9,10 +9,10 @@ function EncodeRank(r)
         return IntegerToString(r);
     elif r lt 36 then
         // 'a'..'z' for 10..35
-        return Sprintf("%c", StringToCode("a") + (r - 10));
+        return CodeToString(StringToCode("a") + (r - 10));
     else
         // 'A'..'Z' for 36..61
-        return Sprintf("%c", StringToCode("A") + (r - 36));
+        return CodeToString(StringToCode("A") + (r - 36));
     end if;
 end function;
 
@@ -56,9 +56,11 @@ intrinsic CreateGenusLabel(genus_sym::SymGen) -> MonStgElt
 
     primes := PrimeDivisors(2*det);
 
-    // Jordan rank decompositions for primes with v_p(det) > 1
-    local_symbols_filtered := [ SymbolTupleList(LocalSymbol(genus_sym, p))
-                                : p in primes | Valuation(det, p) gt 1 ];
+    // Jordan rank decompositions for primes with v_p(det) > 1.  Use a List, not a
+    // SeqEnum: the 2-adic symbol tuples (<val,rank,det,parity,oddity>) and the
+    // odd-prime tuples have different types and share no universe.
+    local_symbols_filtered := [* SymbolTupleList(LocalSymbol(genus_sym, p))
+                                : p in primes | Valuation(det, p) gt 1 *];
     max_vals := [ s[#s][1] : s in local_symbols_filtered ];
     rks := [ [ 0 : i in [1..max_val] ] : max_val in max_vals ];
     for i->s in local_symbols_filtered do
