@@ -144,7 +144,11 @@ function split_1(lat)
 end function;
 
 function root_string_from_rs(R)
-  od := orth_dec(R);
+  // Normalise to a degree = rank lattice: R may be an embedded sublattice (e.g. a
+  // rank-2 root system inside a rank-3 lattice), and orth_dec's LLL transform
+  // produces rank-length coordinates that cannot coerce into a higher-degree
+  // ambient.  The root system only depends on the isometry class.
+  od := orth_dec(LatticeWithGram(GramMatrix(R)));
   root_str := "";
   for rl in od do
     if Rank(rl) eq 0 then

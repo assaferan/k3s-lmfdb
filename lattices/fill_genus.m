@@ -312,6 +312,10 @@ intrinsic FillGenus(label::MonStgElt : timeout := 1800)
         // At the moment we do not have a notion of a canonical gram in the indefinite case
         if (n eq s) then
             vprintf FillGenus, 1 : "%o", gram;
+            // The automorphism group and dual must be expressed in the same basis as
+            // the stored gram (ConnectGenus rebuilds the lattice from that gram); once
+            // the gram is canonicalised below, Lcanon holds the canonical lattice.
+            Lcanon := L;
             success, canonical_gram, elapsed := TimeoutCall(to_per_rep, CanonicalForm, <gram>, 1);
             vprintf FillGenus, 1 : "Canonical form computed in %o seconds\n", elapsed;
             if success then
@@ -319,8 +323,10 @@ intrinsic FillGenus(label::MonStgElt : timeout := 1800)
                 lat["gram"] := Eltseq(canonical_gram);
                 lat["canonical_gram"] := Eltseq(canonical_gram);
                 lat["gram_is_canonical"] := true;
+                Lcanon := LatticeWithGram(canonical_gram);
+                lat["lattice"] := Lcanon;
             end if;
-            success, aut_group, elapsed := TimeoutCall(to_per_rep, AutomorphismGroupFaster, <L>, 1);
+            success, aut_group, elapsed := TimeoutCall(to_per_rep, AutomorphismGroupFaster, <Lcanon>, 1);
             vprintf FillGenus, 1 : "Automorphism group computed in %o seconds\n", elapsed;
             if success then
                 aut_group := aut_group[1];
@@ -328,8 +334,8 @@ intrinsic FillGenus(label::MonStgElt : timeout := 1800)
                 lat["aut_size"] := #aut_group;
                 lat["is_chiral"] := &and[Determinant(g) eq 1 : g in Generators(aut_group)];
                 // double checking, but also useful for festi-veniani
-                LD := Dual(L : Rescale:=false);
-                discL, quo := LD/L;
+                LD := Dual(Lcanon : Rescale:=false);
+                discL, quo := LD/Lcanon;
                 disc_aut := AutomorphismGroup(discL);
                 assert disc_aut_size eq #disc_aut;
                 assert disc_invs eq Invariants(discL);

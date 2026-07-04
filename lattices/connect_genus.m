@@ -560,7 +560,9 @@ end function;
 intrinsic SaveSVdat(lat::Assoc)
 {Save the shortest vector data to disk for later use in the decomposable case}
     path := LabelPath("shortest", lat["label"] : Create);
-    contents := Sprintf("%o|%o|%o|%o|%o|%o|%o|%o|%o|%o|%o", lat["minimum"], lat["shortest"], lat["is_well_rounded"], lat["is_minimal_vector_generated"], lat["is_strongly_well_rounded"], lat["is_eutactic"], lat["is_strongly_eutactic"], lat["t_design"], lat["perfection_defect"], lat["is_perfect"], lat["is_strongly_perfect"]);
+    // to_postgres keeps "shortest" (a sequence of vectors) on a single line;
+    // "%o" would print it across several lines and LoadSVdat reads only the first.
+    contents := Sprintf("%o|%o|%o|%o|%o|%o|%o|%o|%o|%o|%o", lat["minimum"], to_postgres(lat["shortest"]), lat["is_well_rounded"], lat["is_minimal_vector_generated"], lat["is_strongly_well_rounded"], lat["is_eutactic"], lat["is_strongly_eutactic"], lat["t_design"], lat["perfection_defect"], lat["is_perfect"], lat["is_strongly_perfect"]);
     Write(path, contents);
 end intrinsic;
 
@@ -626,7 +628,10 @@ intrinsic ConnectGenus(label::MonStgElt : timeout := 1800)
     // orthogonal decomposition, root/norm-1 sublattices) require a positive
     // definite form; indefinite lattices (nplus < rank) leave them all "\N".
     definite := (s eq n);
-    lats := load_hash_records(HashGenus(GenusSymbolFromLabel(label)), n, s);
+    // The genus hash is HashGenus(genus) = hash(CreateGenusLabel(genus)), and the
+    // label IS that canonical label, so hash it directly.  This avoids
+    // reconstructing the symbol via GenusSymbolFromLabel (and its round-trip bugs).
+    lats := load_hash_records(CollapseIntList(StringToBytes(label)), n, s);
     if #lats gt 0 then
         to_per_rep := timeout div #lats + 1;
     end if;
