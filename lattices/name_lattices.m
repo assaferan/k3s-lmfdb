@@ -103,30 +103,61 @@ intrinsic ScaledAtomicName(L::Lat, catalog::SeqEnum) -> MonStgElt
     return atomic;
 end intrinsic;
 
-intrinsic NameAtomicLattices(DETCAP::RngIntElt) -> Assoc
+intrinsic NameAtomicLattices(DETCAP::RngIntElt : worker:=0, nworkers:=1) -> Assoc, Assoc
 {The label -> name map for the named LatticeDatabase lattices -- and their integral
  scalings up to determinant DETCAP -- that occur in our database.  Each catalog
  lattice is located via its genus with FindLabel (much faster than testing every
- lattice against the catalog).  Name collisions are resolved by family priority.}
+ lattice against the catalog).  Name collisions are resolved by family priority;
+ the second return value maps label -> priority (lower wins), which also lets the
+ per-worker results be merged.  With nworkers > 1 the catalog is partitioned across
+ workers (worker in [0..nworkers-1] does its share), so the naming can be split
+ across parallel workers.}
     catalog := CleanNamedLattices();
+    forms := [PrimitiveIntegralForm(t[2]) : t in catalog];
+    // Balance the workers by the number of scalings each catalog entry generates
+    // (~= (DETCAP/det)^(1/rank)); a rank-1 or low-det entry has vastly more than a
+    // high-rank one, so a plain round-robin leaves some workers idle.  Every worker
+    // sees the same catalog and runs the same deterministic greedy assignment.
+    weights := [ Integers() | ];
+    for i in [1..#catalog] do
+        d := Determinant(forms[i]);  r := Rank(forms[i]);
+        w := (d le DETCAP) select Floor(Root(RealField(30) ! DETCAP / d, r)) else 0;
+        Append(~weights, w);
+    end for;
+    order := [ i : i in [1..#catalog] ];
+    Sort(~order, func< a, b | weights[b] - weights[a] >);   // heaviest first
+    wload := [ 0 : k in [1..nworkers] ];   // NB: `load` is a Magma keyword
+    mine := {};
+    for i in order do
+        mw := 1;
+        for k in [2..nworkers] do if wload[k] lt wload[mw] then mw := k; end if; end for;
+        wload[mw] +:= weights[i];
+        if mw eq worker + 1 then Include(~mine, i); end if;
+    end for;
+
     names := AssociativeArray();
     prio  := AssociativeArray();
-    for t in catalog do
-        name := t[1];
-        Lp := PrimitiveIntegralForm(t[2]);
+    for ci in mine do
+        name := catalog[ci][1];
+        Lp := forms[ci];
         r := Rank(Lp);  d := Determinant(Lp);  p := NameFamilyPriority(name);
         c := 1;
         while d * c^r le DETCAP do
             L := c eq 1 select Lp else LatticeWithGram(c * GramMatrix(Lp));
             label := FindLabel(L);
-            if label ne "\\N" and ((not IsDefined(prio, label)) or p lt prio[label]) then
-                names[label] := c gt 1 select Sprintf("%o%o", c, name) else name;
+            newname := c gt 1 select Sprintf("%o%o", c, name) else name;
+            // Resolve collisions by (priority, name): lower priority wins, ties go to
+            // the lexicographically smaller name (e.g. "A2" over its dual "A2*").  This
+            // is order-independent, so per-worker results merge to the serial answer.
+            if label ne "\\N" and ((not IsDefined(prio, label)) or p lt prio[label]
+                                   or (p eq prio[label] and newname lt names[label])) then
+                names[label] := newname;
                 prio[label] := p;
             end if;
             c +:= 1;
         end while;
     end for;
-    return names;
+    return names, prio;
 end intrinsic;
 
 // --- Phase B: composing names of decomposable lattices ---------------------
@@ -253,6 +284,7 @@ intrinsic LatticeName(label::MonStgElt, ortho_factors::SeqEnum, ortho_mults::Seq
     if IsDefined(atomic_names, label) then return atomic_names[label]; end if;
 
     factor_name := function(f)
+        if f eq "\\N" then return "\\N"; end if;   // a factor not in the database
         if IsDefined(atomic_names, f) then return atomic_names[f]; end if;
         path := LabelPath("lattice_advanced_data", f);
         if not OpenTest(path, "r") then return "\\N"; end if;

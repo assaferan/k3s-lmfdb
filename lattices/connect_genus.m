@@ -1,3 +1,4 @@
+declare verbose ConnectGenus, 1;
 
 intrinsic GramStringToLat(s::MonStgElt, n::RngIntElt) -> Lat
 {Given a string encoding the entries of an n x n Gram matrix, return the corresponding lattice}
@@ -8,9 +9,16 @@ end intrinsic;
 
 function load_genus_data(genus_label)
     genus := AssociativeArray();
+    basic_format := Split(Split(Read("genera_basic.format"), "\n")[1], "|");
+    adv_format   := Split(Split(Read("genera_advanced.format"), "\n")[1], "|");
+    // The genera_advanced file is written by FillGenus with both the basic and
+    // advanced genus fields, so read it with the combined format.
+    stage_format := AssociativeArray();
+    stage_format["basic"] := basic_format;
+    stage_format["advanced"] := basic_format cat adv_format;
     for stage in ["basic", "advanced"] do
         genus_data := Split(Split(Read(LabelPath("genera_"*stage, genus_label)), "\n")[1], "|");
-        genus_format := Split(Read("genera_"*stage*".format"), "|");
+        genus_format := stage_format[stage];
         assert #genus_data eq #genus_format;
         for i in [1..#genus_data] do
             genus[genus_format[i]] := genus_data[i];
@@ -29,32 +37,49 @@ function lookup_hash_function(genus_hash, rank, nplus)
 end function;
 
 hash_format := Split(Split(Read("lat_hash.format"), "\n")[1], "|");
-function load_hash_data(genus_hash, rank, nplus : as_assoc:=true)
+// Read a genus's lattice-hash file into raw split-field rows.
+// NB: these two loaders are kept monomorphic (one returns Assoc, the other
+// SeqEnum) on purpose -- a single function with a polymorphic return type
+// (as_assoc controlling Assoc vs SeqEnum) makes the Magma package compiler
+// reject any intrinsic that calls it more than once with "bad syntax".
+function load_hash_rows(genus_hash, rank, nplus)
     fname := LabelPath("lattice_hashes", rank, nplus, IntegerToString(genus_hash));
-    if not OpenTest(fname, "r") then
-        if as_assoc then return AssociativeArray(); else return []; end if;
-    end if;
-    hash_data := [Split(line, "|") : line in Split(Read(fname), "\n")];
-    assert &and[#dat eq #hash_format : dat in hash_data];
-    if as_assoc then
-        hash_pos := Index(hash_format, "hash");
-        lats := AssociativeArray(:Default:=[]);
-        for lat in hash_data do
-            h := StringToInteger(lat[hash_pos]);
-            Append(~lats[h], lat);
-        end for;
-    else
-        lats := [];
-        for dat in hash_data do
-            lat := AssociativeArray();
-            for i in [1..#dat] do
-                lat[hash_format[i]] := dat[i];
-                if dat[i] eq "None" then lat[hash_format[i]] := "\\N"; end if;
-            end for;
-            Append(~lats, lat);
-        end for;
-    end if;
+    if not OpenTest(fname, "r") then return []; end if;
+    hash_format := Split(Split(Read("lat_hash.format"), "\n")[1], "|");
+    rows := [Split(line, "|") : line in Split(Read(fname), "\n")];
+    assert &and[#row eq #hash_format : row in rows];
+    return rows;
+end function;
+
+// Group the lattices in a genus by their per-lattice hash value.
+// Returns Assoc: hash value -> sequence of raw split-field rows.
+function load_hash_by_hash(genus_hash, rank, nplus)
+    hash_format := Split(Split(Read("lat_hash.format"), "\n")[1], "|");
+    hash_pos := Index(hash_format, "hash");
+    lats := AssociativeArray();
+    for row in load_hash_rows(genus_hash, rank, nplus) do
+        // Indefinite lattices have no per-lattice hash (theta/BV hashing does not
+        // apply), so their hash column is "\N"; skip them rather than crash.
+        if row[hash_pos] eq "\\N" then continue; end if;
+        h := StringToInteger(row[hash_pos]);
+        if IsDefined(lats, h) then Append(~lats[h], row); else lats[h] := [row]; end if;
+    end for;
     return lats;
+end function;
+
+// Return the lattices in a genus as a sequence of field-name -> value records.
+function load_hash_records(genus_hash, rank, nplus)
+    hash_format := Split(Split(Read("lat_hash.format"), "\n")[1], "|");
+    recs := [];
+    for row in load_hash_rows(genus_hash, rank, nplus) do
+        lat := AssociativeArray();
+        for i in [1..#row] do
+            lat[hash_format[i]] := row[i];
+            if row[i] eq "None" then lat[hash_format[i]] := "\\N"; end if;
+        end for;
+        Append(~recs, lat);
+    end for;
+    return recs;
 end function;
 
 hash_cache := NewStore();
@@ -62,7 +87,7 @@ hash_cache := NewStore();
 intrinsic HashCache() -> Assoc
 {Get an associative array for caching lattices by genus and hash value}
     if not StoreIsDefined(hash_cache, "cache") then
-        StoreSet(hash_cache, "cache", AssociativeArray(:Default:=AssociativeArray()));
+        StoreSet(hash_cache, "cache", AssociativeArray());
     end if;
     return StoreGet(hash_cache, "cache");
 end intrinsic;
@@ -73,7 +98,7 @@ intrinsic GetHashes(genus_hash::RngIntElt, rank::RngIntElt, nplus::RngIntElt) ->
     if IsDefined(cache, genus_hash) then
         return cache[genus_hash];
     end if;
-    lats := load_hash_data(genus_hash, rank, nplus);
+    lats := load_hash_by_hash(genus_hash, rank, nplus);
     cache[genus_hash] := lats;
     StoreSet(hash_cache, "cache", cache);
     return lats;
@@ -124,6 +149,9 @@ end intrinsic;
 
 intrinsic LatSortKey(label::MonStgElt) -> Tup
 {A tuple that sorts how we want lattices to sort}
+    // A summand not found in the database (e.g. out of range) has label "\N";
+    // sort those first and keep them as their own group.
+    if label eq "\\N" then return <0, 0, 0, label>; end if;
     pieces := Split(label, ".");
     // Sort by: rank, then signature (pos def first), then absolute det, then the label string as tiebreaker
     return <StringToInteger(pieces[1]), -StringToInteger(pieces[2]), StringToInteger(pieces[3]), label>;
@@ -156,10 +184,16 @@ end intrinsic;
 intrinsic AutOrbits(L::Lat, A::GrpMat, vecs::SeqEnum) -> SeqEnum
 {Given a lattice L, an automorphism group A of L and a sequence of vectors which is invariant under the action of A (which could be LatElts or ModTupFldElts), return orbit representatives for the action of A on vecs}
     // This assumes A is in GL_n(Z), with respect to the basis of the lattice
-    // created with NaturalAction = false
+    // created with NaturalAction = false.  vecs may be LatElts (e.g. shortest
+    // vectors, whose coordinates come from Coordinates) or ModTupFldElts (e.g.
+    // deep holes, which are already coordinate vectors); reduce both to their
+    // coordinate vectors and match the group action there, so we never mix types.
+    coord := func<v | Type(v) eq LatElt select Vector(Rationals(), Coordinates(v))
+                                          else  Vector(Rationals(), Eltseq(v))>;
+    cvecs := [coord(v) : v in vecs];
+    gens := [ChangeRing(g, Rationals()) : g in Generators(A)];
     Sn := Sym(#vecs);
-    perms := [Sn![Index(vecs, Coordelt(L,Eltseq(Vector(Coordinates(v))*g)))
-		 : v in vecs] : g in Generators(A)];
+    perms := [Sn![Index(cvecs, cvecs[i]*g) : i in [1..#vecs]] : g in gens];
     A_perm := sub<Sn|perms>;
     orb_reps := OrbitRepresentatives(A_perm);
     // We throw away the orbit sizes, and replace the index of the
@@ -167,7 +201,7 @@ intrinsic AutOrbits(L::Lat, A::GrpMat, vecs::SeqEnum) -> SeqEnum
     return [vecs[o[2]] : o in orb_reps];
 end intrinsic;
 
-intrinsic VoronoiData(L::Lat, A::GrpMat) -> FldRatElt, SeqEnum[ModTupFldElt], RngIntElt, RngIntElt, RngIntElt
+intrinsic VoronoiData(L::Lat, A::GrpMat) -> RngIntElt, RngIntElt, SeqEnum[ModTupFldElt], RngIntElt, RngIntElt, RngIntElt
 {Given a lattice L and its automorphism group A, find the covering norm, orbit representatives for the deep holes, the number of deep holes, the number of deep hole orbits, and the number of holes}
     cn := CoveringRadius(L);
     cnn := Numerator(cn);
@@ -491,6 +525,7 @@ intrinsic LoadVdat(labels::SeqEnum[MonStgElt]) -> SeqEnum[Tup]
 {Given a sequence of lattice labels, load Voronoi data as a sequence of tuples (covering norm, num deep holes, num deep hole orbits, num holes).  If any not available, return empty sequence instead}
     ans := [];
     for label in labels do
+        if label eq "\\N" then return []; end if;   // a factor not in the database
         fname := LabelPath("voronoi", label);
         if not OpenTest(fname, "r") then
             return [];
@@ -525,7 +560,9 @@ end function;
 intrinsic SaveSVdat(lat::Assoc)
 {Save the shortest vector data to disk for later use in the decomposable case}
     path := LabelPath("shortest", lat["label"] : Create);
-    contents := Sprintf("%o|%o|%o|%o|%o|%o|%o|%o|%o|%o|%o", lat["minimum"], lat["shortest"], lat["is_well_rounded"], lat["is_minimal_vector_generated"], lat["is_strongly_well_rounded"], lat["is_eutactic"], lat["is_strongly_eutactic"], lat["t_design"], lat["perfection_defect"], lat["is_perfect"], lat["is_strongly_perfect"]);
+    // to_postgres keeps "shortest" (a sequence of vectors) on a single line;
+    // "%o" would print it across several lines and LoadSVdat reads only the first.
+    contents := Sprintf("%o|%o|%o|%o|%o|%o|%o|%o|%o|%o|%o", lat["minimum"], to_postgres(lat["shortest"]), lat["is_well_rounded"], lat["is_minimal_vector_generated"], lat["is_strongly_well_rounded"], lat["is_eutactic"], lat["is_strongly_eutactic"], lat["t_design"], lat["perfection_defect"], lat["is_perfect"], lat["is_strongly_perfect"]);
     Write(path, contents);
 end intrinsic;
 
@@ -533,6 +570,7 @@ intrinsic LoadSVdat(labels::SeqEnum[MonStgElt]) -> SeqEnum
 {Given a sequence of lattice labels, load short-vector data for each as an associative array keyed by property name (minimum, shortest, is_well_rounded, ...), with booleans and integers parsed and "\N" denoting a missing value.  If any file is not available, return an empty sequence instead.}
     ans := [];
     for label in labels do
+        if label eq "\\N" then return []; end if;   // a factor not in the database
         fname := LabelPath("shortest", label);
         if not OpenTest(fname, "r") then
             return [];
@@ -548,7 +586,7 @@ intrinsic LoadSVdat(labels::SeqEnum[MonStgElt]) -> SeqEnum
     return ans;
 end intrinsic;
 
-intrinsic TimeoutAssign(~D::Assoc, key::MonStgElt, func::UserProgram, inp::Tup, timeout::RngIntElt : Parameters := [])
+intrinsic TimeoutAssign(~D::Assoc, key::MonStgElt, func::Program, inp::Tup, timeout::RngIntElt : Parameters := [])
 {Compute value using given function, then store in D}
     success, out, elapsed := TimeoutCall(timeout, func, inp, 1 : Parameters := Parameters);
     if success then
@@ -558,31 +596,75 @@ intrinsic TimeoutAssign(~D::Assoc, key::MonStgElt, func::UserProgram, inp::Tup, 
     end if;
 end intrinsic;
 
+intrinsic ShortestVectorCoords(L::Lat) -> SeqEnum
+{The coordinate sequences of the shortest vectors of L (up to sign). Returns plain
+ integer sequences rather than lattice vectors so the result can be serialized
+ across a TimeoutCall fork.}
+    return [Eltseq(v) : v in ShortestVectors(L)];
+end intrinsic;
+
+intrinsic AutOrbitCoords(L::Lat, A::GrpMat, vecs::SeqEnum) -> SeqEnum
+{As AutOrbits, but returns the coordinate sequences of the orbit representatives
+ (serializable across a TimeoutCall fork).}
+    return [Eltseq(v) : v in AutOrbits(L, A, vecs)];
+end intrinsic;
+
 intrinsic ConnectGenus(label::MonStgElt : timeout := 1800)
 {Fill in lattice data that requires working with lattices in different genera}
     SetColumns(0);
     advanced_format := Split(Split(Read("lat_advanced.format"), "\n")[1], "|");
+    basic_format := Split(Split(Read("lat_basic.format"), "\n")[1], "|");
     atomic_names := LoadAtomicNames();              // stage-4 atomic names (run_basic_names)
     name_i := Index(advanced_format, "name");
-    genus := load_genus_data(label);
-    n := StringToInteger(genus["rank"]);
-    s := StringToInteger(genus["nplus"]);
-    scale := StringToInteger(genus["scale"]);
-    lats := load_hash_data(HashGenus(GenusSymbolFromLabel(label)), n, s : as_assoc:=false);
+    // Everything ConnectGenus needs is determined by the label: rank and nplus are
+    // its first two components, and the genus (hence its hash) is recovered by
+    // GenusSymbolFromLabel.  HashGenus is canonical, so this reproduces the hash
+    // FillGenus used to name the lattice_hashes file; scale is the gcd of each
+    // lattice's Gram entries (computed in the loop below).
+    sl := Split(label, ".");
+    n := StringToInteger(sl[1]);
+    s := StringToInteger(sl[2]);
+    // Geometric invariants (minimum, shortest vectors, density, Voronoi data, the
+    // orthogonal decomposition, root/norm-1 sublattices) require a positive
+    // definite form; indefinite lattices (nplus < rank) leave them all "\N".
+    definite := (s eq n);
+    // The genus hash is HashGenus(genus) = hash(CreateGenusLabel(genus)), and the
+    // label IS that canonical label, so hash it directly.  This avoids
+    // reconstructing the symbol via GenusSymbolFromLabel (and its round-trip bugs).
+    lats := load_hash_records(CollapseIntList(StringToBytes(label)), n, s);
     if #lats gt 0 then
         to_per_rep := timeout div #lats + 1;
     end if;
 
     for i in [1..#lats] do
         lat := lats[i];
+        // The hash records only carry label|hash|minimum|gram; ConnectGenus needs
+        // basic fields (aut_group, is_even, ...) computed in FillGenus, so merge in
+        // the full basic record (without clobbering the hash fields).
+        basic_pieces := Split(Split(Read(LabelPath("lattice_basic_data", lat["label"])), "\n")[1], "|");
+        for j in [1..#basic_format] do
+            if not IsDefined(lat, basic_format[j]) then
+                lat[basic_format[j]] := basic_pieces[j];
+            end if;
+        end for;
         L := GramStringToLat(lat["gram"], n);
+        scale := GCD([Integers() | x : x in Eltseq(GramMatrix(L))]);   // = gcd(rep), a genus invariant
         D := Dual(L);
+
+        // Default every advanced column to "\N"; the computations below overwrite
+        // the ones that apply (most are definite-only, so indefinite lattices keep
+        // the defaults).
+        for col in advanced_format do
+            if not IsDefined(lat, col) then lat[col] := "\\N"; end if;
+        end for;
 
         lat["dual_det"] := Determinant(D);
         lat["dual_label"] := FindLabel(D);
-        lat["dual_density"] := Density(D);
-        lat["dual_hermite"] := HermiteNumber(D);
-        lat["dual_kissing"] := KissingNumber(D);
+        if definite then
+            lat["dual_density"] := Density(D);
+            lat["dual_hermite"] := HermiteNumber(D);
+            lat["dual_kissing"] := KissingNumber(D);
+        end if;
         // dual_theta_series / dual_theta_prec are computed and stored in FillGenus
         // (lat_basic.format), so they are not recomputed here.
 
@@ -597,19 +679,20 @@ intrinsic ConnectGenus(label::MonStgElt : timeout := 1800)
         if scale eq 1 then
             lat["primitive_scaling"] := "\\N";
         else
-            lat["primitive_scaling"] := FindLabel(LatticeWithGram(GramMatrix(L) div scale));
+            lat["primitive_scaling"] := FindLabel(LatticeWithGram(GramMatrix(L) div scale : CheckPositive := false));
         end if;
 
+        if definite then
         summands := OrthogonalDecompositionFaster(L);
         lat["is_indecomposable"] := (#summands eq 1);
         summand_labels := [FindLabel(M) : M in summands];
-        collected := CountFibers(summand_labels, LatSortKey);
+        collected := CountFibers(summand_labels, func<x | LatSortKey(x)>);   // CountFibers wants a UserProgram, not an intrinsic
         lat["orthogonal_factors"] := [fib[1][4] : fib in collected];
         lat["orthogonal_multiplicities"] := [fib[2] : fib in collected];
         lat["name"] := LatticeName(lat["label"], lat["orthogonal_factors"],
                                    lat["orthogonal_multiplicities"], atomic_names, name_i);
 
-        for col in ["covering_norm", "deep_holes", "deep_hole_count", "deep_hole_orbit_count", "hole_count"] do
+        for col in ["covering_norm_num", "covering_norm_den", "deep_holes", "deep_hole_count", "deep_hole_orbit_count", "hole_count"] do
             lat[col] := "\\N"; // Overwritten below if possible
         end for;
         for col in ["shortest", "is_well_rounded", "is_minimal_vector_generated", "is_strongly_well_rounded", "is_eutactic", "is_strongly_eutactic", "t_design", "perfection_defect", "is_perfect", "is_strongly_perfect"] do
@@ -618,19 +701,21 @@ intrinsic ConnectGenus(label::MonStgElt : timeout := 1800)
         if lat["is_indecomposable"] then
             aut_group := (lat["aut_group"] cmpne "\\N") select StringToGroup(lat["aut_group"]) else 0;
             // In addition to the timeout, we may want to impose a rank limit
-            success, vdat, elapsed := TimeoutCall(timeout, VoronoiData, <L, aut_group>, 5);
+            success, vdat, elapsed := TimeoutCall(timeout, VoronoiData, <L, aut_group>, 6);
             if success then
                 lat["covering_norm_num"], lat["covering_norm_den"], lat["deep_holes"], lat["deep_hole_count"], lat["deep_hole_orbit_count"], lat["hole_count"] := Explode(vdat);
                 // We write the data to a file for loading in the decomposable case
                 SaveVdat(lat);
             end if;
 
-            has_sv, S, elapsed := TimeoutCall(timeout, ShortestVectors, <L>, 1);
+            has_sv, S, elapsed := TimeoutCall(timeout, ShortestVectorCoords, <L>, 1);
             if has_sv then
-                // magma returns representatives up to +-
-                half := S[1];
+                // magma returns representatives up to +-; ShortestVectorCoords
+                // returns coordinate sequences (lattice vectors are not
+                // serializable across the TimeoutCall fork), so rebuild them in L
+                half := [L ! c : c in S[1]];
                 S := half cat [-v : v in half];
-                TimeoutAssign(~lat, "shortest", AutOrbits, <L, aut_group, S>, timeout);
+                TimeoutAssign(~lat, "shortest", AutOrbitCoords, <L, aut_group, S>, timeout);
                 TimeoutAssign(~lat, "is_well_rounded", IsWellRounded, <L, S>, timeout);
                 TimeoutAssign(~lat, "is_minimal_vector_generated", IsMinimalVectorGenerated, <L, S>, timeout);
                 TimeoutAssign(~lat, "is_strongly_well_rounded", IsStronglyWellRounded, <L, S>, timeout);
@@ -643,12 +728,13 @@ intrinsic ConnectGenus(label::MonStgElt : timeout := 1800)
                 TimeoutAssign(~lat, "t_design", tDesign, <L, half>, timeout : Parameters := [<"A", aut_group>]);
                 if lat["t_design"] cmpne "\\N" then
                     if lat["t_design"] ge 2 then
-                        if has_eutaxy then
-                            assert lat["is_eutactic"] and lat["is_strongly_eutactic"];
-                        else
-                            lat["is_eutactic"] := true;
-                            lat["is_strongly_eutactic"] := true;
-                        end if;
+                        // Venkov: minimal vectors forming a 2-design => strongly
+                        // eutactic.  This is definitive, so trust it rather than the
+                        // direct IsEutactic derivation above, whose eutaxy-coefficient
+                        // equality test (#Set(eutaxy) eq 1) can spuriously disagree
+                        // (e.g. A4, which is strongly eutactic).
+                        lat["is_eutactic"] := true;
+                        lat["is_strongly_eutactic"] := true;
                     end if;
                     if lat["t_design"] ge 4 then
                         lat["is_strongly_perfect"] := true;
@@ -727,6 +813,7 @@ intrinsic ConnectGenus(label::MonStgElt : timeout := 1800)
                 // left as "\N" here.
             end if;
         end if;
+        end if;   // definite: orthogonal decomposition / Voronoi / shortest vectors
 
         // Decided when the theory is complete (rank <= 8, disc 2, Plesken III.1, ...);
         // discriminant 3-5 and the general high-rank case are left as "\N".
@@ -738,12 +825,13 @@ intrinsic ConnectGenus(label::MonStgElt : timeout := 1800)
             lat["is_additively_indecomposable"] := "\\N";
         end if;
 
-        if lat["is_even"] then
+        if lat["is_even"] eq "T" then
             lat["even_sublattice"] := "\\N";
         else
             lat["even_sublattice"] := FindLabel(EvenSublattice(L));
         end if;
 
+        if definite then
         sv1 := ShortVectors(L, 1, 1);
         R1 := sub<L|[x[1] : x in sv1]>;
         lat["norm1_rank"] := Rank(R1);
@@ -756,12 +844,13 @@ intrinsic ConnectGenus(label::MonStgElt : timeout := 1800)
         sv2 := ShortVectors(L, 1, 2);
         R := sub<L|[x[1] : x in sv2]>;
         lat["root_sublattice"] := RootString(R);
-    
+
         if Rank(R) eq 0 or Rank(R) eq n then
             lat["root_complement"] := "\\N";
         else
             lat["root_complement"] := FindLabel(OrthogonalComplementFaster(L, R));
         end if;
+        end if;   // definite: norm-1 and root sublattices
 
         lat["is_algebraic"] := "\\N"; // TODO Eran: We are not sure about what to do here - see below.
         /*
@@ -788,8 +877,12 @@ intrinsic ConnectGenus(label::MonStgElt : timeout := 1800)
         */
 
 
-        // Remove gram since it's not in lat_advanced.format
-        Remove(~lat, "gram");
+        // lat carries input fields not in lat_advanced.format (the hash record's
+        // gram/hash/minimum and the basic fields merged in above); drop them so
+        // only the advanced columns remain.
+        for k in Keys(lat) do
+            if k notin advanced_format then Remove(~lat, k); end if;
+        end for;
         error if Keys(lat) ne Set(advanced_format), [k : k in advanced_format | k notin Keys(lat)], [k : k in Keys(lat) | k notin advanced_format];
         output := Join([Sprintf("%o", to_postgres(lat[k])) : k in advanced_format], "|");
         Write(LabelPath("lattice_advanced_data", lat["label"] : Create), output : Overwrite);

@@ -55,7 +55,9 @@ sig_cache := NewStore();
 intrinsic SigCache() -> Assoc
 {Get an associative array for caching all lattices of a given signature up to a discriminant bound}
     if not StoreIsDefined(sig_cache, "cache") then
-        StoreSet(sig_cache, "cache", AssociativeArray(:Default:=AssociativeArray()));
+        // NB: no Default -- a Default makes IsDefined(cache, k) return true for
+        // every key, so LoadPrimitiveLattices would Explode an empty default.
+        StoreSet(sig_cache, "cache", AssociativeArray());
     end if;
     return StoreGet(sig_cache, "cache");
 end intrinsic;
@@ -90,10 +92,11 @@ intrinsic LoadPrimitiveLattices(sig::Tup, Dbound::RngIntElt) -> Assoc
         fname := LabelPath("lattice_basic_data", label);
         pieces := Split(Read(fname), "|");
         if pieces[scale_i] eq "1" then
-            lats[label] := GramStringToLat(pieces[gram_i]);
+            lats[label] := GramStringToLat(pieces[gram_i], sig[1]);   // sig = <rank, nplus>
         end if;
     end for;
     cache[sig] := <Dbound, lats>;
+    StoreSet(sig_cache, "cache", cache);   // persist the cache across calls
     return lats;
 end intrinsic;
 
@@ -206,7 +209,11 @@ If recursing is false, the output is the sequence of tuples <label, decompositio
                 continue;
             end if;
             Include(~seen, decomp);
-            lat := TensorProduct(lat1, lat2);
+            // Build the tensor product from the Kronecker product of the Gram
+            // matrices -- Gram(L1 (x) L2) = Gram(L1) (x) Gram(L2) -- rather than
+            // Magma's TensorProduct builtin, which throws on some pairs (an "Illegal
+            // null sequence" inside its number-field-lattice path).
+            lat := LatticeWithGram(KroneckerProduct(GramMatrix(lat1), GramMatrix(lat2)) : CheckPositive := false);
             if recursing then
                 Append(~ans, <lat, decomp, D>);
                 Append(~Ds, D);

@@ -113,6 +113,12 @@ function genus_reps_Logan(L)
     return Setseq(neighbours(L : thorough));
 end function;
 
+function genus_reps_Faster(L)
+    // Our own mass-verified p-neighbour enumeration (definite lattices only).
+    reps := GenusRepresentativesFaster(L);
+    return reps;
+end function;
+
 function SphereVolume(n)
     RR := RealField();
     pi := Pi(RR);
@@ -215,10 +221,20 @@ intrinsic FillGenus(label::MonStgElt : timeout := 1800)
     else
         genus_success, reps, elapsed := TimeoutCall(timeout, genus_reps_Magma, <L0>, 1);
         vprintf FillGenus, 1 : "Genus representatives computed in %o seconds\n", elapsed;
+        if (not genus_success) and (n eq s) and (n ge 3) then
+            // Magma's GenusRepresentatives fails on some definite genera (e.g. a
+            // rank-4 "Illegal null sequence" in its number-field-lattice Norm); fall
+            // back to our own mass-verified p-neighbour enumeration.  Restricted to
+            // definite (needs a mass) rank >= 3, where the p-neighbour method is
+            // reliable -- it is not trustworthy/terminating for rank 2.
+            vprintf FillGenus, 1 : "GenusRepresentatives failed; falling back to p-neighbours\n";
+            genus_success, reps, elapsed := TimeoutCall(timeout, genus_reps_Faster, <L0>, 1);
+        end if;
     end if;
     advanced["class_number"] := "\\N";
     advanced["adjacency_matrix"] := "\\N";
     advanced["adjacency_polynomials"] := "\\N";
+    advanced["ambient_lattice"] := "\\N";   // TODO: compute the ambient lattice
     if genus_success then
         reps := reps[1];
         vprintf FillGenus, 1 : "Number of genus representatives: %o\n", #reps;
@@ -291,6 +307,12 @@ intrinsic FillGenus(label::MonStgElt : timeout := 1800)
         lat["dual_theta_series"] := "\\N";
         lat["dual_theta_prec"] := "\\N";
         lat["successive_minima"] := "\\N";
+        // Only set below in the positive-definite (n eq s) branch; default them here
+        // so the indefinite case still has every column.
+        lat["center_density"] := "\\N";
+        lat["canonical_gram"] := "\\N";
+        lat["is_universal"] := "\\N";
+        lat["is_even_universal"] := "\\N";
         // Trying to reduce the size of the entries in the gram matrix
         gram0 := GramMatrix(L);
         gram := LLLGram(gram0);
@@ -305,14 +327,21 @@ intrinsic FillGenus(label::MonStgElt : timeout := 1800)
         // At the moment we do not have a notion of a canonical gram in the indefinite case
         if (n eq s) then
             vprintf FillGenus, 1 : "%o", gram;
+            // The automorphism group and dual must be expressed in the same basis as
+            // the stored gram (ConnectGenus rebuilds the lattice from that gram); once
+            // the gram is canonicalised below, Lcanon holds the canonical lattice.
+            Lcanon := L;
             success, canonical_gram, elapsed := TimeoutCall(to_per_rep, CanonicalForm, <gram>, 1);
             vprintf FillGenus, 1 : "Canonical form computed in %o seconds\n", elapsed;
             if success then
                 canonical_gram := canonical_gram[1];
                 lat["gram"] := Eltseq(canonical_gram);
+                lat["canonical_gram"] := Eltseq(canonical_gram);
                 lat["gram_is_canonical"] := true;
+                Lcanon := LatticeWithGram(canonical_gram);
+                lat["lattice"] := Lcanon;
             end if;
-            success, aut_group, elapsed := TimeoutCall(to_per_rep, AutomorphismGroupFaster, <L>, 1);
+            success, aut_group, elapsed := TimeoutCall(to_per_rep, AutomorphismGroupFaster, <Lcanon>, 1);
             vprintf FillGenus, 1 : "Automorphism group computed in %o seconds\n", elapsed;
             if success then
                 aut_group := aut_group[1];
@@ -320,8 +349,8 @@ intrinsic FillGenus(label::MonStgElt : timeout := 1800)
                 lat["aut_size"] := #aut_group;
                 lat["is_chiral"] := &and[Determinant(g) eq 1 : g in Generators(aut_group)];
                 // double checking, but also useful for festi-veniani
-                LD := Dual(L : Rescale:=false);
-                discL, quo := LD/L;
+                LD := Dual(Lcanon : Rescale:=false);
+                discL, quo := LD/Lcanon;
                 disc_aut := AutomorphismGroup(discL);
                 assert disc_aut_size eq #disc_aut;
                 assert disc_invs eq Invariants(discL);
@@ -355,7 +384,7 @@ intrinsic FillGenus(label::MonStgElt : timeout := 1800)
             if theta_prec gt 0 then
                 lat["theta_series"] := theta;
                 lat["theta_prec"] := theta_prec;
-                if lat["is_even"] then
+                if lat["is_even"] eq "T" then
                     lat["is_universal"] := false;
                     lat["is_even_universal"] := "\\N";
                     // 15 theorem
@@ -471,7 +500,18 @@ intrinsic FillGenus(label::MonStgElt : timeout := 1800)
         lats[idx]["label"] := Sprintf("%o.%o", basics["label"], idx);
     end for;
 
-    SetHashes(~lats, ~advanced, theta_elapsed, timeout);
+    if #lats gt 0 then
+        SetHashes(~lats, ~advanced, theta_elapsed, timeout);
+    else
+        // GenusRepresentatives failed (e.g. timed out on a hard genus): record the
+        // genus with no stored lattices.  HashGenus factors through the canonical
+        // label, so the genus hash is that of the label -- no representative needed.
+        advanced["genus_hash"] := CollapseIntList(StringToBytes(basics["label"]));
+        advanced["theta_distinguishing_prec"] := "\\N";
+        advanced["is_theta_distinguished"] := "\\N";
+        advanced["hash_function"] := "\\N";
+        advanced["is_hash_distinguished"] := "\\N";
+    end if;
     // We need to be able to look up hash functions for lattices that are not in the main
     // genus being processed.  So we write the hash function used to a separate file
     // so that it can be looked up when needed (see lookup_hash_function in connect_genus.m)

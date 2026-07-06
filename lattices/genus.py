@@ -606,8 +606,11 @@ def create_genus_entry(genus_symbol):
     table_row['level'] = level = genus_symbol.level()
     table_row['is_even'] = genus_symbol.is_even()
     disc_form = genus_symbol.discriminant_form() # Timing: this was slow
-    table_row['discriminant_group_invs'] = disc_form.invariants()
-    table_row['discriminant_group_exponent'] = table_row['discriminant_group_invs'][-1]
+    invs = disc_form.invariants()
+    table_row['discriminant_group_invs'] = invs
+    # the trivial discriminant group (e.g. unimodular lattices) has no invariants;
+    # its exponent is 1
+    table_row['discriminant_group_exponent'] = invs[-1] if invs else 1
     disc_q = disc_form.gram_matrix_quadratic()
     den = disc_q.denominator()
     table_row['discriminant_form'] = (den*disc_q).list()
@@ -837,7 +840,7 @@ def write_all_of_sig_between_genera_basic(n_plus, n_minus, lb_det, ub_det):
     Create data files with all genera of a certain signature with determinant between lb_det and ub_det,
     one file for each genus
     '''
-    folder_name = "genera_basic/%d/%d" % (n_plus, n_minus)
+    folder_name = "genera_basic/%d/%d" % (n_plus + n_minus, n_plus)   # rank/nplus, matching LabelPath
     os.makedirs(folder_name, exist_ok=True)
     sgn = 1 if is_even(n_minus) else -1;
     for d in range(lb_det, ub_det+1):

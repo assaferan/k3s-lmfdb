@@ -17,9 +17,10 @@ System("mkdir -p tensor_indecomp");
 Write("tensor_indecomp/" * sig, Join(indecomp, "\n"));
 Write("tensor_indecomp/" * sig * ".done", "done");
 
+System("mkdir -p lattice_decomp_data");
 dname := "lattice_decomp_data/" * sig;
 for label in indecomp do
-    Write(dname, Sprintf("%o|\\N|f"));
+    Write(dname, Sprintf("%o|\\N|f", label));
 end for;
 for label -> D in decomp do
     s := [];

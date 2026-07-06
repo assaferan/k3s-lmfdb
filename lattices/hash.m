@@ -9,12 +9,17 @@ end intrinsic;
 
 intrinsic HashGenus(G::SymGen) -> RngIntElt
 {Compute the hash value associated to the genus of the given lattice}
-    return CollapseIntList(StringToBytes(ConwaySymbol(G)));
+    // Hash the canonical LMFDB genus label, not ConwaySymbol(G): equal genera can
+    // have different Conway-symbol strings (e.g. a 2-adic oddity prints as "_1"
+    // from Genus(L) but "_{I}" from GenusSymbolFromLabel), which broke the
+    // label -> hash round-trip.  CreateGenusLabel is canonical, so
+    // HashGenus(Genus(L)) = HashGenus(GenusSymbolFromLabel(LabelOf(L))).
+    return CollapseIntList(StringToBytes(CreateGenusLabel(G)));
 end intrinsic;
 
 intrinsic HashGenus(L::Lat) -> RngIntElt
 {Compute the hash value associated to the genus of the given lattice}
-    return Hash(Genus(L));
+    return HashGenus(Genus(L));   // the custom SymGen hash, matching what is stored
 end intrinsic;
 
 intrinsic ThetaHash(theta_series::SeqEnum[RngIntElt], genus_hash::RngIntElt, prec::RngIntElt) -> RngIntElt
@@ -90,7 +95,7 @@ intrinsic SetHashes(~lats::SeqEnum[Assoc], ~genus::Assoc, theta_elapsed::Assoc, 
         return;
     end if;
     level := lats[1]["level"];
-    det := lats[1]["det"];
+    det := lats[1]["disc_abs"];   // there is no "det" column; disc_abs is |determinant|
 
     thetas := Sort([<lat["theta_series"], lat["theta_prec"]> : lat in lats]);
     dprec := 0;
@@ -141,8 +146,11 @@ intrinsic SetHashes(~lats::SeqEnum[Assoc], ~genus::Assoc, theta_elapsed::Assoc, 
         // TODO: if there are too many vectors of norm up to m we can bail before calling BVhashes
         success, res, elapsed := TimeoutCall(timeout, BVhashes, <lattices, genus_hash, m>, 1);
         if success then
+            res := res[1];   // TimeoutCall wraps the results in a List; unwrap to the hash sequence
             dcount := #{h : h in res};
-            Append(~hash_opts, <-dcount, elapsed, Sprintf("BV%o", m)>);
+            // theta_elapsed holds reals, so coerce this elapsed (a string from
+            // TimeoutCall) to match the hash_opts tuple universe.
+            Append(~hash_opts, <-dcount, StringToReal(elapsed), Sprintf("BV%o", m)>);
             BVvals[m] := res;
             if dcount eq #lats then
                 break;
@@ -159,7 +167,7 @@ intrinsic SetHashes(~lats::SeqEnum[Assoc], ~genus::Assoc, theta_elapsed::Assoc, 
     genus["is_hash_distinguished"] := (best[1] eq -#lats);
     genus["hash_function"] := best[3];
     code := best[3][1..2];
-    m := StringToInteger(best[3][3..#best]);
+    m := StringToInteger(best[3][3..#best[3]]);   // #best[3] (string length), not #best (tuple arity)
     if code eq "BV" then
         vals := BVvals[m];
     elif code eq "Th" then
