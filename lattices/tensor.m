@@ -209,13 +209,11 @@ If recursing is false, the output is the sequence of tuples <label, decompositio
                 continue;
             end if;
             Include(~seen, decomp);
-            // Magma's TensorProduct can fail for some pairs (e.g. an "Illegal null
-            // sequence" inside its LatNF path); skip such pairs rather than crash.
-            try
-                lat := TensorProduct(lat1, lat2);
-            catch e
-                continue;
-            end try;
+            // Build the tensor product from the Kronecker product of the Gram
+            // matrices -- Gram(L1 (x) L2) = Gram(L1) (x) Gram(L2) -- rather than
+            // Magma's TensorProduct builtin, which throws on some pairs (an "Illegal
+            // null sequence" inside its number-field-lattice path).
+            lat := LatticeWithGram(KroneckerProduct(GramMatrix(lat1), GramMatrix(lat2)) : CheckPositive := false);
             if recursing then
                 Append(~ans, <lat, decomp, D>);
                 Append(~Ds, D);

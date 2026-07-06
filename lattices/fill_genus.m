@@ -113,6 +113,12 @@ function genus_reps_Logan(L)
     return Setseq(neighbours(L : thorough));
 end function;
 
+function genus_reps_Faster(L)
+    // Our own mass-verified p-neighbour enumeration (definite lattices only).
+    reps := GenusRepresentativesFaster(L);
+    return reps;
+end function;
+
 function SphereVolume(n)
     RR := RealField();
     pi := Pi(RR);
@@ -215,6 +221,15 @@ intrinsic FillGenus(label::MonStgElt : timeout := 1800)
     else
         genus_success, reps, elapsed := TimeoutCall(timeout, genus_reps_Magma, <L0>, 1);
         vprintf FillGenus, 1 : "Genus representatives computed in %o seconds\n", elapsed;
+        if (not genus_success) and (n eq s) and (n ge 3) then
+            // Magma's GenusRepresentatives fails on some definite genera (e.g. a
+            // rank-4 "Illegal null sequence" in its number-field-lattice Norm); fall
+            // back to our own mass-verified p-neighbour enumeration.  Restricted to
+            // definite (needs a mass) rank >= 3, where the p-neighbour method is
+            // reliable -- it is not trustworthy/terminating for rank 2.
+            vprintf FillGenus, 1 : "GenusRepresentatives failed; falling back to p-neighbours\n";
+            genus_success, reps, elapsed := TimeoutCall(timeout, genus_reps_Faster, <L0>, 1);
+        end if;
     end if;
     advanced["class_number"] := "\\N";
     advanced["adjacency_matrix"] := "\\N";
