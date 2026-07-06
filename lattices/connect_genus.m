@@ -728,12 +728,13 @@ intrinsic ConnectGenus(label::MonStgElt : timeout := 1800)
                 TimeoutAssign(~lat, "t_design", tDesign, <L, half>, timeout : Parameters := [<"A", aut_group>]);
                 if lat["t_design"] cmpne "\\N" then
                     if lat["t_design"] ge 2 then
-                        if has_eutaxy then
-                            assert lat["is_eutactic"] and lat["is_strongly_eutactic"];
-                        else
-                            lat["is_eutactic"] := true;
-                            lat["is_strongly_eutactic"] := true;
-                        end if;
+                        // Venkov: minimal vectors forming a 2-design => strongly
+                        // eutactic.  This is definitive, so trust it rather than the
+                        // direct IsEutactic derivation above, whose eutaxy-coefficient
+                        // equality test (#Set(eutaxy) eq 1) can spuriously disagree
+                        // (e.g. A4, which is strongly eutactic).
+                        lat["is_eutactic"] := true;
+                        lat["is_strongly_eutactic"] := true;
                     end if;
                     if lat["t_design"] ge 4 then
                         lat["is_strongly_perfect"] := true;

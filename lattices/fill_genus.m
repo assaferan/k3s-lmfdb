@@ -485,7 +485,18 @@ intrinsic FillGenus(label::MonStgElt : timeout := 1800)
         lats[idx]["label"] := Sprintf("%o.%o", basics["label"], idx);
     end for;
 
-    SetHashes(~lats, ~advanced, theta_elapsed, timeout);
+    if #lats gt 0 then
+        SetHashes(~lats, ~advanced, theta_elapsed, timeout);
+    else
+        // GenusRepresentatives failed (e.g. timed out on a hard genus): record the
+        // genus with no stored lattices.  HashGenus factors through the canonical
+        // label, so the genus hash is that of the label -- no representative needed.
+        advanced["genus_hash"] := CollapseIntList(StringToBytes(basics["label"]));
+        advanced["theta_distinguishing_prec"] := "\\N";
+        advanced["is_theta_distinguished"] := "\\N";
+        advanced["hash_function"] := "\\N";
+        advanced["is_hash_distinguished"] := "\\N";
+    end if;
     // We need to be able to look up hash functions for lattices that are not in the main
     // genus being processed.  So we write the hash function used to a separate file
     // so that it can be looked up when needed (see lookup_hash_function in connect_genus.m)

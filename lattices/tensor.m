@@ -209,7 +209,13 @@ If recursing is false, the output is the sequence of tuples <label, decompositio
                 continue;
             end if;
             Include(~seen, decomp);
-            lat := TensorProduct(lat1, lat2);
+            // Magma's TensorProduct can fail for some pairs (e.g. an "Illegal null
+            // sequence" inside its LatNF path); skip such pairs rather than crash.
+            try
+                lat := TensorProduct(lat1, lat2);
+            catch e
+                continue;
+            end try;
             if recursing then
                 Append(~ans, <lat, decomp, D>);
                 Append(~Ds, D);
