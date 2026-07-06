@@ -183,7 +183,37 @@ def main():
 
     if not args.skip_names:
         with timed("Computing basic names"):
-            subprocess.run(["magma", "-b", "run_basic_names.m"], check=True)
+            # Cap the named-lattice scalings at the determinant we actually enumerated
+            # (otherwise NameAtomicLattices scans scalings up to its default 32768,
+            # which for low ranks is tens of thousands of wasted FindLabel calls), and
+            # split the catalog across workers -- naming is otherwise the only serial
+            # stage.  Each worker writes atomic_names_partial_<k>; merge them keeping
+            # the lowest-priority name per label (the same collision rule the intrinsic
+            # applies in-process).
+            with open("name_jobs.txt", "w") as Fout:
+                for w in range(args.jobs):
+                    Fout.write(f"{w}:{args.jobs}\n")
+            parallel("name_jobs.txt", "names.joblog",
+                     [f"DETCAP:={args.max_disc_ratio}", "WORKER:={1}", "NWORKERS:={2}", "run_basic_names.m"],
+                     colsep=":")
+            best = {}   # label -> (priority, name)
+            for w in range(args.jobs):
+                partial = Path(f"atomic_names_partial_{w}")
+                if not partial.exists():
+                    continue
+                for line in partial.read_text().splitlines():
+                    if not line:
+                        continue
+                    label, name, prio = line.rsplit("|", 2)
+                    # match NameAtomicLattices' collision rule: (priority, name),
+                    # lower priority wins, ties to the lexicographically smaller name
+                    key = (int(prio), name)
+                    if label not in best or key < best[label]:
+                        best[label] = key
+                partial.unlink()
+            with open("atomic_names", "w") as Fout:
+                Fout.write("\n".join(f"{label}|{name}" for label, (_, name) in best.items()))
+            print(f"Named {len(best)} atomic lattices (merged from {args.jobs} workers).", flush=True)
 
     if not args.skip_connect:
         with timed("Connecting genera"):
