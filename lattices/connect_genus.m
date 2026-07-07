@@ -518,7 +518,7 @@ intrinsic SaveVdat(lat::Assoc)
 {Save the voronoi data to disk for later use in the decomposable case}
     path := LabelPath("voronoi", lat["label"] : Create);
     contents := Sprintf("%o|%o|%o|%o|%o", lat["covering_norm_num"], lat["covering_norm_den"], lat["deep_hole_count"], lat["deep_hole_orbit_count"], lat["hole_count"]);
-    Write(path, contents);
+    Write(path, contents : Overwrite);   // Overwrite, not append: connect must be re-runnable (a stale file would otherwise double up and break LoadVdat's parse)
 end intrinsic;
 
 intrinsic LoadVdat(labels::SeqEnum[MonStgElt]) -> SeqEnum[Tup]
@@ -563,7 +563,7 @@ intrinsic SaveSVdat(lat::Assoc)
     // to_postgres keeps "shortest" (a sequence of vectors) on a single line;
     // "%o" would print it across several lines and LoadSVdat reads only the first.
     contents := Sprintf("%o|%o|%o|%o|%o|%o|%o|%o|%o|%o|%o", lat["minimum"], to_postgres(lat["shortest"]), lat["is_well_rounded"], lat["is_minimal_vector_generated"], lat["is_strongly_well_rounded"], lat["is_eutactic"], lat["is_strongly_eutactic"], lat["t_design"], lat["perfection_defect"], lat["is_perfect"], lat["is_strongly_perfect"]);
-    Write(path, contents);
+    Write(path, contents : Overwrite);   // Overwrite, not append: connect must be re-runnable (a stale file would otherwise double up and break LoadSVdat's parse)
 end intrinsic;
 
 intrinsic LoadSVdat(labels::SeqEnum[MonStgElt]) -> SeqEnum
