@@ -1,10 +1,19 @@
-intrinsic GetThetaBound(r::RngIntElt, N::RngIntElt, D::RngIntElt) -> RngIntElt
-{Get a precomputed trace bound from a file for theta series of lattices with rank r and level N}
-    X := DirichletGroupFull(IsEven(r) select N else 4*N);
+intrinsic GetThetaBound(r::RngIntElt, N::RngIntElt, D::RngIntElt, is_even::BoolElt) -> RngIntElt
+{Dimension of the modular-forms space containing the theta series of a rank-r,
+level-N, determinant-D lattice with the given even/odd parity; used to bound how many
+theta coefficients can distinguish lattices in a genus.}
     k := r div 2;
     Dstar := (-1)^k * D;
-    chi := X!KroneckerCharacter(Dstar);
-    return Dimension(ModularForms(chi, k));
+    kron := KroneckerCharacter(Dstar);
+    // Theta of L lies in M_{r/2}(Gamma_0(base), chi): base = N when L is even of even
+    // rank, else 4N (odd rank => half-integral weight; an odd lattice => level x 4).
+    // Keying only on IsEven(r) is wrong for an odd lattice of even rank -- its character
+    // can have conductor 4N > N, which then fails to coerce into the mod-N Dirichlet
+    // group ("character has too large conductor").  The LCM with the actual conductor is
+    // a belt-and-braces guard so no nonstandard conductor can re-trigger that crash.
+    base := (is_even and IsEven(r)) select N else 4*N;
+    X := DirichletGroupFull(LCM(base, Conductor(kron)));
+    return Dimension(ModularForms(X!kron, k));
 end intrinsic;
 
 intrinsic HashGenus(G::SymGen) -> RngIntElt
@@ -124,7 +133,7 @@ intrinsic SetHashes(~lats::SeqEnum[Assoc], ~genus::Assoc, theta_elapsed::Assoc, 
     genus["theta_distinguishing_prec"] := dprec;
     if distinguished then
         genus["is_theta_distinguished"] := true;
-    elif dprec ge GetThetaBound(rank, level, det) then
+    elif dprec ge GetThetaBound(rank, level, det, lats[1]["is_even"] eq "T") then
         genus["is_theta_distinguished"] := false;
     else
         genus["is_theta_distinguished"] := "\\N";

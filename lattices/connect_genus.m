@@ -817,10 +817,20 @@ intrinsic ConnectGenus(label::MonStgElt : timeout := 1800)
 
         // Decided when the theory is complete (rank <= 8, disc 2, Plesken III.1, ...);
         // discriminant 3-5 and the general high-rank case are left as "\N".
-        ai_ok, ai_data := TimeoutCall(timeout, IsAdditivelyIndecomposable, <L>, 2);
-        if ai_ok then
-            ai_val, ai_known := Explode(ai_data);
-            lat["is_additively_indecomposable"] := ai_known select ai_val else "\\N";
+        // is_additively_indecomposable is a positive-definite notion (whether the
+        // Gram matrix is a sum of two nonzero PSD integral matrices).  For indefinite
+        // L the low-rank branches return meaningless values and the rank 6-8 branch
+        // feeds L to IsIsometric, which requires positive-definiteness and fails with
+        // "Numerical GSO does not seem to be positive definite".  Only decide it in
+        // the definite case; leave it "\N" (undetermined) otherwise.
+        if definite then
+            ai_ok, ai_data := TimeoutCall(timeout, IsAdditivelyIndecomposable, <L>, 2);
+            if ai_ok then
+                ai_val, ai_known := Explode(ai_data);
+                lat["is_additively_indecomposable"] := ai_known select ai_val else "\\N";
+            else
+                lat["is_additively_indecomposable"] := "\\N";
+            end if;
         else
             lat["is_additively_indecomposable"] := "\\N";
         end if;
