@@ -80,8 +80,13 @@ intrinsic SetHashes(~lats::SeqEnum[Assoc], ~genus::Assoc, theta_elapsed::Assoc, 
     genus_hash := HashGenus(Genus(L0)); // TODO: could have problems if gram is too big to store in shortint[] so we're using gram_others.
     genus["genus_hash"] := genus_hash;
 
-    rank := lats[1]["rank"];
-    nplus := lats[1]["nplus"];
+    // These are copied verbatim (as strings) from the genus's basic record, so
+    // coerce to integers before any arithmetic use -- in particular GetThetaBound
+    // below wants RngIntElt and otherwise crashes with "Bad argument types" (a bug
+    // that only surfaces on the rare genus whose theta series do NOT distinguish it,
+    // the one code path that reaches GetThetaBound).
+    rank := StringToInteger(lats[1]["rank"]);
+    nplus := StringToInteger(lats[1]["nplus"]);
     if rank ne nplus then
         // We don't compute hashes for indefinite lattices
         // TODO: maybe we should in rank 3, using spinor genera
@@ -94,8 +99,8 @@ intrinsic SetHashes(~lats::SeqEnum[Assoc], ~genus::Assoc, theta_elapsed::Assoc, 
         end for;
         return;
     end if;
-    level := lats[1]["level"];
-    det := lats[1]["disc_abs"];   // there is no "det" column; disc_abs is |determinant|
+    level := StringToInteger(lats[1]["level"]);
+    det := StringToInteger(lats[1]["disc_abs"]);   // there is no "det" column; disc_abs is |determinant|
 
     thetas := Sort([<lat["theta_series"], lat["theta_prec"]> : lat in lats]);
     dprec := 0;
@@ -120,21 +125,32 @@ intrinsic SetHashes(~lats::SeqEnum[Assoc], ~genus::Assoc, theta_elapsed::Assoc, 
     if distinguished then
         genus["is_theta_distinguished"] := true;
     elif dprec ge GetThetaBound(rank, level, det) then
-        genus["is_theta_distinugished"] := false;
+        genus["is_theta_distinguished"] := false;
     else
-        genus["is_theta_distinugished"] := "\\N";
+        genus["is_theta_distinguished"] := "\\N";
     end if;
 
     hash_opts := [];
+    // Every "elapsed" that goes into a hash_opts tuple must land in ONE real field:
+    // hash_opts has no declared universe, so its first Append fixes the tuple's
+    // element types, and theta_elapsed mixes reals (compute times) with Infinity()
+    // (type Infty, filled in for precisions a representative never reached).  If a
+    // theta option with an Infinity elapsed is appended first, the 2nd slot becomes
+    // Infty and the subsequent real BV elapsed can no longer coerce in -- the
+    // "Append: Cannot coerce element into the universe" crash.  to_secs collapses
+    // both cases to RealField (Infinity -> a large sentinel, since elapsed is only a
+    // tie-breaker in PickBest = Minimum, where slower/unavailable should sort last).
+    RR := RealField();
+    to_secs := func<x | (x cmpeq Infinity()) select (RR ! 10^30) else (RR ! x)>;
 
     // If theta hash is an option, record how good it is
     if dprec le mprec then
         // Can use theta series for hash function
         tprec := Minimum([k : k in Keys(theta_elapsed) | k ge dprec]);
-        Append(~hash_opts, <-dcount, theta_elapsed[tprec], Sprintf("Th%o", dprec)>);
+        Append(~hash_opts, <-dcount, to_secs(theta_elapsed[tprec]), Sprintf("Th%o", dprec)>);
     elif mprec gt 1 then
         tprec := Minimum([k : k in Keys(theta_elapsed) | k ge mprec]);
-        Append(~hash_opts, <-mcount, theta_elapsed[tprec], Sprintf("Th%o", mprec)>);
+        Append(~hash_opts, <-mcount, to_secs(theta_elapsed[tprec]), Sprintf("Th%o", mprec)>);
     end if;
 
     // Now check BV options
@@ -148,9 +164,7 @@ intrinsic SetHashes(~lats::SeqEnum[Assoc], ~genus::Assoc, theta_elapsed::Assoc, 
         if success then
             res := res[1];   // TimeoutCall wraps the results in a List; unwrap to the hash sequence
             dcount := #{h : h in res};
-            // theta_elapsed holds reals, so coerce this elapsed (a string from
-            // TimeoutCall) to match the hash_opts tuple universe.
-            Append(~hash_opts, <-dcount, StringToReal(elapsed), Sprintf("BV%o", m)>);
+            Append(~hash_opts, <-dcount, to_secs(StringToReal(elapsed)), Sprintf("BV%o", m)>);
             BVvals[m] := res;
             if dcount eq #lats then
                 break;
