@@ -721,6 +721,7 @@ data (now guaranteed on disk) and patch them into the lattice's advanced record.
     lats := load_hash_records(CollapseIntList(StringToBytes(label)), n, s);
     for i in [1..#lats] do
         path := LabelPath("lattice_advanced_data", lats[i]["label"]);
+        if not OpenTest(path, "r") then continue; end if;   // produce pass never wrote it (e.g. an upstream fill failure) -- nothing to derive
         fields := SplitPipe(Split(Read(path), "\n")[1]);   // first line, empties preserved
         error if #fields ne #advanced_format, "advanced record field count mismatch for", lats[i]["label"];
         if fields[ii] ne "false" then continue; end if;   // only decomposable lattices
@@ -831,12 +832,21 @@ two-pass connect in run_all.py).}
         end for;
         if lat["is_indecomposable"] then
             aut_group := (lat["aut_group"] cmpne "\\N") select StringToGroup(lat["aut_group"]) else 0;
+            // aut_group is the integer 0 when the automorphism group is unknown ("\N",
+            // e.g. an AutomorphismGroup timeout -- more frequent at high rank).
+            // VoronoiData and AutOrbitCoords take a GrpMat, so passing 0 raises "Bad
+            // argument types"; guard on the group being present and otherwise leave
+            // those fields "\N" (they cannot be computed without it anyway).  (tDesign
+            // takes A := 0 as its default and handles the no-group case itself.)
+            have_aut := Type(aut_group) eq GrpMat;
             // In addition to the timeout, we may want to impose a rank limit
-            success, vdat, elapsed := TimeoutCall(timeout, VoronoiData, <L, aut_group>, 6);
-            if success then
-                lat["covering_norm_num"], lat["covering_norm_den"], lat["deep_holes"], lat["deep_hole_count"], lat["deep_hole_orbit_count"], lat["hole_count"] := Explode(vdat);
-                // We write the data to a file for loading in the decomposable case
-                SaveVdat(lat);
+            if have_aut then
+                success, vdat, elapsed := TimeoutCall(timeout, VoronoiData, <L, aut_group>, 6);
+                if success then
+                    lat["covering_norm_num"], lat["covering_norm_den"], lat["deep_holes"], lat["deep_hole_count"], lat["deep_hole_orbit_count"], lat["hole_count"] := Explode(vdat);
+                    // We write the data to a file for loading in the decomposable case
+                    SaveVdat(lat);
+                end if;
             end if;
 
             has_sv, S, elapsed := TimeoutCall(timeout, ShortestVectorCoords, <L>, 1);
@@ -846,7 +856,9 @@ two-pass connect in run_all.py).}
                 // serializable across the TimeoutCall fork), so rebuild them in L
                 half := [L ! c : c in S[1]];
                 S := half cat [-v : v in half];
-                TimeoutAssign(~lat, "shortest", AutOrbitCoords, <L, aut_group, S>, timeout);
+                if have_aut then
+                    TimeoutAssign(~lat, "shortest", AutOrbitCoords, <L, aut_group, S>, timeout);
+                end if;
                 TimeoutAssign(~lat, "is_well_rounded", IsWellRounded, <L, S>, timeout);
                 TimeoutAssign(~lat, "is_minimal_vector_generated", IsMinimalVectorGenerated, <L, S>, timeout);
                 TimeoutAssign(~lat, "is_strongly_well_rounded", IsStronglyWellRounded, <L, S>, timeout);
