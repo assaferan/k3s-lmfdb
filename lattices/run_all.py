@@ -216,8 +216,21 @@ def main():
             print(f"Named {len(best)} atomic lattices (merged from {args.jobs} workers).", flush=True)
 
     if not args.skip_connect:
-        with timed("Connecting genera"):
-            parallel("genus_jobs.txt", "connect.joblog", ["labels:={1}", "run_connect_genus.m"])
+        # Connect in two passes.  A decomposable lattice derives its geometric fields
+        # (eutaxy, covering radius, deep holes, ...) from its orthogonal factors --
+        # strictly lower-rank lattices in other genera whose data is written during
+        # connect.  A single flat pass that processed a composite before its factors
+        # silently dropped those fields to \N.  So: pass 1 ("produce") runs the full
+        # connect for every genus but skips the decomposable derivations, which writes
+        # every indecomposable factor's data to disk; pass 2 ("consume") then derives
+        # the decomposable fields with all factor data guaranteed present.  Both passes
+        # are flat and fully parallel; the only barrier is between them.
+        with timed("Connecting genera (pass 1: produce)"):
+            parallel("genus_jobs.txt", "connect1.joblog",
+                     ["labels:={1}", "phase:=1", "run_connect_genus.m"])
+        with timed("Connecting genera (pass 2: consume)"):
+            parallel("genus_jobs.txt", "connect2.joblog",
+                     ["labels:={1}", "phase:=2", "run_connect_genus.m"])
 
 if __name__ == "__main__":
     main()

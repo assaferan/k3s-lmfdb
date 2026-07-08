@@ -20,6 +20,12 @@ SetVerbose("ConnectGenus", StringToInteger(verbose));
 if not assigned timeout then timeout := "60"; end if;
 timeout := StringToInteger(timeout);
 
+// phase controls the two-pass connect (see run_all.py): "1" = produce (compute
+// everything except the decomposable-lattice derivations, writing the indecomposable
+// factor data); "2" = consume (derive the decomposable fields from factor data now on
+// disk); unset/"0" = single pass (do everything).
+if not assigned phase then phase := "0"; end if;
+
 if assigned labels then
     label_list := Split(labels, ":");
 else
@@ -30,7 +36,13 @@ procedure() // forcing magma to read the full input before forking
 failed := [];
 for l in label_list do
     try
-        ConnectGenus(l : timeout := timeout);
+        if phase eq "2" then
+            ConnectGenusDerive(l);
+        elif phase eq "1" then
+            ConnectGenus(l : timeout := timeout, derive_decomposable := false);
+        else
+            ConnectGenus(l : timeout := timeout);
+        end if;
     catch e
         printf "ERROR: %o: %o\n", l, e;
         Append(~failed, l);
