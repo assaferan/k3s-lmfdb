@@ -170,7 +170,13 @@ def main():
     gcount = build_enumeration_inputs("genus_jobs.txt")
     if not args.skip_enumerate_genera:
         with timed(f"Enumerating genera ({gcount} batches)"):
-            parallel("genus_jobs.txt", "fill.joblog", ["labels:={1}", "run_fill_genus.m"])
+            # Pass the enumeration guards through to FillGenus so a few pathological
+            # high-rank genera can't dominate wall-clock (they otherwise run for hours):
+            # skip enumerating past enum-masslimit, store genus-level data only past
+            # enum-sizelimit, and cap per-genus wall-clock at enum-timelimit.
+            parallel("genus_jobs.txt", "fill.joblog",
+                     [f"masslimit:={args.enum_masslimit}", f"sizelimit:={args.enum_sizelimit}",
+                      f"timelimit:={args.enum_timelimit}", "labels:={1}", "run_fill_genus.m"])
 
     if not args.skip_embeddings:
         print("Finding lattice embeddings (TODO: Oscar embedding code)")

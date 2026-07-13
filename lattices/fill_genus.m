@@ -181,8 +181,16 @@ function genus_reps_square_disc(L0)
     return reps;
 end function;
 
-intrinsic FillGenus(label::MonStgElt : timeout := 1800)
-{Fill the data for a genus and its lattice representatives, given files in the genera_basic format.}
+intrinsic FillGenus(label::MonStgElt : timeout := 1800, masslimit := 0, sizelimit := 0, timelimit := 0)
+{Fill the data for a genus and its lattice representatives, given files in the genera_basic format.
+
+Enumeration guards (0 = unlimited): masslimit skips enumerating a definite genus whose
+mass exceeds it (its class number is too large to enumerate); sizelimit records the
+genus-level data but skips the per-lattice work (adjacency matrix + individual lattices)
+once the class number exceeds it; timelimit is a per-genus wall-clock cap on the
+per-lattice loop.  In every case the genus-level record is still written, so a guarded
+genus is bounded rather than either running for hours or going missing.}
+    genus_t0 := Realtime();
     data := Split(Split(Read(LabelPath("genera_basic", label)), "\n")[1], "|");
     basic_format := Split(Read("genera_basic.format"), "|");
     advanced_format := Split(Read("genera_advanced.format"), "|");
@@ -215,7 +223,15 @@ intrinsic FillGenus(label::MonStgElt : timeout := 1800)
     // forms, which reject square discriminants); these are handled directly.  Note
     // the class number is NOT always 1 -- e.g. for m = 5 some genera have two
     // classes.
-    if n eq 2 and IsSquare(-Determinant(L0)) then
+    // masslimit: a definite genus of mass M has class number on the order of M, so a
+    // very large mass means enumeration is hopeless -- skip it and keep only the
+    // (cheap) genus-level record.  Mass is only defined for definite genera.
+    mass_pieces := Split(basics["mass"][2..#basics["mass"]-1], ",");
+    genus_mass := StringToInteger(mass_pieces[1]) / StringToInteger(mass_pieces[2]);
+    if (masslimit gt 0) and (n eq s) and (genus_mass gt masslimit) then
+        vprintf FillGenus, 1 : "Skipping enumeration: mass %o exceeds masslimit %o\n", genus_mass, masslimit;
+        genus_success := false;
+    elif n eq 2 and IsSquare(-Determinant(L0)) then
         genus_success, reps, elapsed := TimeoutCall(timeout, genus_reps_square_disc, <L0>, 1);
         vprintf FillGenus, 1 : "Genus representatives (square discriminant) computed in %o seconds\n", elapsed;
     else
@@ -246,7 +262,10 @@ intrinsic FillGenus(label::MonStgElt : timeout := 1800)
         // This works for 2.28 - should be replaced by SetGenus in 2.29
         G`Representatives := reps;
         G`IsNatural := true;
-        if (n eq s) then
+        // The adjacency (Hecke) matrix is class_number x class_number and built by
+        // p-neighbour walks, so it is prohibitively expensive for large genera; skip it
+        // past sizelimit (the class number is still recorded).
+        if (n eq s) and ((sizelimit le 0) or (#reps le sizelimit)) then
           for p in hecke_primes(n) do
             vprintf FillGenus, 1 : "%o:", p;
             vtime FillGenus, 1 : Ap := AdjacencyMatrix(G,p);
@@ -259,6 +278,12 @@ intrinsic FillGenus(label::MonStgElt : timeout := 1800)
           advanced["adjacency_polynomials"] := to_postgres(hecke_polys);
         end if;
     else
+        reps := [];
+    end if;
+    // sizelimit: past this class number, keep the genus-level record but skip the
+    // per-lattice loop below (individual automorphism groups, theta series, hashes).
+    if (sizelimit gt 0) and (#reps gt sizelimit) then
+        vprintf FillGenus, 1 : "Class number %o exceeds sizelimit %o: storing genus-level data only\n", #reps, sizelimit;
         reps := [];
     end if;
     disc_invs := basics["discriminant_group_invs"];
@@ -280,7 +305,16 @@ intrinsic FillGenus(label::MonStgElt : timeout := 1800)
     // change in future -- e.g. to the mean or to per-representative timings.
     theta_elapsed := AssociativeArray();
 
+    // timelimit: a per-genus wall-clock backstop.  If the per-lattice work overruns it
+    // (a genus under sizelimit whose individual lattices are still pathologically slow),
+    // stop and fall back to the genus-level record rather than grinding for hours.
+    genus_timed_out := false;
     for Li->L in reps do
+        if (timelimit gt 0) and (Realtime(genus_t0) gt timelimit) then
+            vprintf FillGenus, 1 : "Per-genus timelimit %o s exceeded at rep %o/%o: storing genus-level data only\n", timelimit, Li, #reps;
+            genus_timed_out := true;
+            break;
+        end if;
         lat := AssociativeArray();
         lat["lattice"] := L; // useful for subroutines; removed before saving to disk
         for col in ["rank", "nplus", "nminus", "disc_abs", "disc_sign", "disc_radical", "disc_witt", "disc_geometric", "disc_quadratic", "disc_half", "disc_2adic_unit", "bad_primes", "discriminant_group_invs", "discriminant_group_exponent", "is_even", "level", "scale", "conway_symbol", "dual_conway_symbol"] do
@@ -439,6 +473,11 @@ intrinsic FillGenus(label::MonStgElt : timeout := 1800)
 
         Append(~lats, lat);
     end for;
+
+    // If the per-genus timelimit tripped mid-loop, discard the partial lattices so the
+    // record is consistent (class_number set, genus-level data only) rather than
+    // claiming a class number it did not store.
+    if genus_timed_out then lats := []; end if;
 
     vprintf FillGenus, 1 : "Done!\n";
 
