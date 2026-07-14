@@ -181,15 +181,16 @@ function genus_reps_square_disc(L0)
     return reps;
 end function;
 
-intrinsic FillGenus(label::MonStgElt : timeout := 1800, masslimit := 0, sizelimit := 0, timelimit := 0)
+intrinsic FillGenus(label::MonStgElt : timeout := 1800, masslimit := 0, sizelimit := 0, timelimit := 0, adjlimit := 0)
 {Fill the data for a genus and its lattice representatives, given files in the genera_basic format.
 
 Enumeration guards (0 = unlimited): masslimit skips enumerating a definite genus whose
-mass exceeds it (its class number is too large to enumerate); sizelimit records the
-genus-level data but skips the per-lattice work (adjacency matrix + individual lattices)
-once the class number exceeds it; timelimit is a per-genus wall-clock cap on the
-per-lattice loop.  In every case the genus-level record is still written, so a guarded
-genus is bounded rather than either running for hours or going missing.}
+mass exceeds it (its class number is too large to enumerate); adjlimit skips the
+adjacency (Hecke) matrix once the class number exceeds it (its cost is ~class_number^2);
+sizelimit records the genus-level data but skips storing individual lattices past that
+class number; timelimit is a per-genus wall-clock cap on the per-lattice loop.  In every
+case the genus-level record is still written, so a guarded genus is bounded rather than
+either running for hours or going missing.}
     genus_t0 := Realtime();
     data := Split(Split(Read(LabelPath("genera_basic", label)), "\n")[1], "|");
     basic_format := Split(Read("genera_basic.format"), "|");
@@ -256,6 +257,7 @@ genus is bounded rather than either running for hours or going missing.}
     advanced["adjacency_matrix"] := "\\N";
     advanced["adjacency_polynomials"] := "\\N";
     advanced["ambient_lattice"] := "\\N";   // TODO: compute the ambient lattice
+    have_adjacency := false;   // set below iff the adjacency (Hecke) matrix is computed
     if genus_success then
         reps := reps[1];
         vprintf FillGenus, 1 : "Number of genus representatives: %o\n", #reps;
@@ -268,9 +270,12 @@ genus is bounded rather than either running for hours or going missing.}
         G`Representatives := reps;
         G`IsNatural := true;
         // The adjacency (Hecke) matrix is class_number x class_number and built by
-        // p-neighbour walks, so it is prohibitively expensive for large genera; skip it
-        // past sizelimit (the class number is still recorded).
-        if (n eq s) and ((sizelimit le 0) or (#reps le sizelimit)) then
+        // p-neighbour walks -- an O(class_number^2) cost that dominates fill for
+        // moderate class numbers at high rank (a single rank-8 class-~300 genus can take
+        // hours).  Gate it on adjlimit, a much lower cap than sizelimit; the class number
+        // is still recorded, and pneighbors below is emitted only when the matrix exists.
+        have_adjacency := (n eq s) and ((adjlimit le 0) or (#reps le adjlimit));
+        if have_adjacency then
           for p in hecke_primes(n) do
             vprintf FillGenus, 1 : "%o:", p;
             vtime FillGenus, 1 : Ap := AdjacencyMatrix(G,p);
@@ -565,7 +570,7 @@ genus is bounded rather than either running for hours or going missing.}
 
     for idx->L in lats do
         lat := L;
-        if genus_success and (n eq s) then
+        if have_adjacency then   // pneighbors are read off the Hecke matrix, so only when it was computed
             pNeighbors := AssociativeArray();
             for p in hecke_primes(n) do
                 // !!! TODO - check that permutation is applied in the right direction

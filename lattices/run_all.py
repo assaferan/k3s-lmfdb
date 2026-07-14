@@ -37,6 +37,7 @@ parser.add_argument("-b", "--batch-mass", type=int, default=128, help="Batch gen
 parser.add_argument("--enum-masslimit", type=int, default=1000, help="If the mass of a genus is larger than this threshold, don't even try to enumerate lattices within")
 parser.add_argument("--enum-timelimit", type=int, default=300, help="Maximum number of seconds to spend on enumerating a genus") # TODO: calibrate this based on how much time we want to spend
 parser.add_argument("--enum-sizelimit", type=int, default=1000, help="For genera with class number larger than this, do not store individual lattices within the genus")
+parser.add_argument("--enum-adjlimit", type=int, default=100, help="For genera with class number larger than this, do not compute the adjacency (Hecke) matrix (its cost is ~class_number^2, so it dominates fill for moderate class numbers at high rank)")
 
 # Skip stages
 parser.add_argument("--skip-list-genera", action="store_true", help="Assume that genera have already been listed")
@@ -176,7 +177,8 @@ def main():
             # enum-sizelimit, and cap per-genus wall-clock at enum-timelimit.
             parallel("genus_jobs.txt", "fill.joblog",
                      [f"masslimit:={args.enum_masslimit}", f"sizelimit:={args.enum_sizelimit}",
-                      f"timelimit:={args.enum_timelimit}", "labels:={1}", "run_fill_genus.m"])
+                      f"timelimit:={args.enum_timelimit}", f"adjlimit:={args.enum_adjlimit}",
+                      "labels:={1}", "run_fill_genus.m"])
 
     if not args.skip_embeddings:
         print("Finding lattice embeddings (TODO: Oscar embedding code)")
