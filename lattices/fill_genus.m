@@ -225,11 +225,16 @@ genus is bounded rather than either running for hours or going missing.}
     // classes.
     // masslimit: a definite genus of mass M has class number on the order of M, so a
     // very large mass means enumeration is hopeless -- skip it and keep only the
-    // (cheap) genus-level record.  Mass is only defined for definite genera.
-    mass_pieces := Split(basics["mass"][2..#basics["mass"]-1], ",");
-    genus_mass := StringToInteger(mass_pieces[1]) / StringToInteger(mass_pieces[2]);
-    if (masslimit gt 0) and (n eq s) and (genus_mass gt masslimit) then
-        vprintf FillGenus, 1 : "Skipping enumeration: mass %o exceeds masslimit %o\n", genus_mass, masslimit;
+    // (cheap) genus-level record.  Mass is only defined for definite genera; indefinite
+    // ones store "\N" here, so only parse it when definite.
+    skip_massive := false;
+    if (masslimit gt 0) and (n eq s) then
+        mass_pieces := Split(basics["mass"][2..#basics["mass"]-1], ",");
+        genus_mass := StringToInteger(mass_pieces[1]) / StringToInteger(mass_pieces[2]);
+        skip_massive := genus_mass gt masslimit;
+    end if;
+    if skip_massive then
+        vprintf FillGenus, 1 : "Skipping enumeration: mass exceeds masslimit %o\n", masslimit;
         genus_success := false;
     elif n eq 2 and IsSquare(-Determinant(L0)) then
         genus_success, reps, elapsed := TimeoutCall(timeout, genus_reps_square_disc, <L0>, 1);
