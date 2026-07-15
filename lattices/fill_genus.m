@@ -240,18 +240,22 @@ either running for hours or going missing.}
     elif n eq 2 and IsSquare(-Determinant(L0)) then
         genus_success, reps, elapsed := TimeoutCall(timeout, genus_reps_square_disc, <L0>, 1);
         vprintf FillGenus, 1 : "Genus representatives (square discriminant) computed in %o seconds\n", elapsed;
+    elif (n eq s) and (n ge 3) then
+        // Definite rank >= 3: our own p-neighbour enumeration (GenusRepresentativesFaster)
+        // is the default.  It is mass-verified -- it enumerates until the accumulated
+        // sum of 1/|Aut| equals the genus mass -- so it is provably complete when it
+        // terminates.  It also avoids Magma's GenusRepresentatives, which is slow and
+        // reliably fails at rank >= 7 (the "cs must be non-empty" bug); we used to run
+        // it first and wait out its 60s timeout before falling back, ~60s wasted per
+        // high-rank genus.  Magma is used only where Faster does not apply (below).
+        genus_success, reps, elapsed := TimeoutCall(timeout, genus_reps_Faster, <L0>, 1);
+        vprintf FillGenus, 1 : "Genus representatives (p-neighbours) computed in %o seconds\n", elapsed;
     else
+        // Rank 2 (non-square determinant) or indefinite: Faster is not usable here --
+        // the p-neighbour method does not terminate at rank 2, and there is no mass to
+        // verify completeness for indefinite genera -- so use Magma's general builtin.
         genus_success, reps, elapsed := TimeoutCall(timeout, genus_reps_Magma, <L0>, 1);
         vprintf FillGenus, 1 : "Genus representatives computed in %o seconds\n", elapsed;
-        if (not genus_success) and (n eq s) and (n ge 3) then
-            // Magma's GenusRepresentatives fails on some definite genera (e.g. a
-            // rank-4 "Illegal null sequence" in its number-field-lattice Norm); fall
-            // back to our own mass-verified p-neighbour enumeration.  Restricted to
-            // definite (needs a mass) rank >= 3, where the p-neighbour method is
-            // reliable -- it is not trustworthy/terminating for rank 2.
-            vprintf FillGenus, 1 : "GenusRepresentatives failed; falling back to p-neighbours\n";
-            genus_success, reps, elapsed := TimeoutCall(timeout, genus_reps_Faster, <L0>, 1);
-        end if;
     end if;
     advanced["class_number"] := "\\N";
     advanced["adjacency_matrix"] := "\\N";
