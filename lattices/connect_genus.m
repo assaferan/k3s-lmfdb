@@ -319,7 +319,13 @@ If it is, return the (exact, rational) eutaxy coefficients in the same order as 
                            cat [ Abs(x*Db) : x in Eltseq(b) ] cat [Db, 1]);
     Dbound := Mm^(m+1) * (m+1)^((m+1) div 2 + 1);
     tau := 1/(2*Dbound);
-    R := RealField(Ceiling(Log(10, 2*Dbound)) + 30);   // +30 guard digits for LP roundoff
+    // Recovering an exact rational of denominator <= Dbound from the LP's floating
+    // solution needs ~2*log10(Dbound) digits, not log10(Dbound): two rationals with
+    // denominators <= Dbound differ by as little as 1/Dbound^2, so BestApproximation
+    // below cannot resolve the vertex coordinate with only log10(Dbound) digits and
+    // throws "Overflow or precision loss" once Dbound exceeds ~10^30 (dense rank-6
+    // lattices with many minimal vectors).  Use 2x the digits, +30 to guard LP roundoff.
+    R := RealField(2*Ceiling(Log(10, 2*Dbound)) + 30);
 
     nv := 2*d + 2;                          // p_1..p_d, q_1..q_d, tp, tn
     rows := [];  rhs := [];
@@ -518,11 +524,11 @@ intrinsic SaveVdat(lat::Assoc)
 {Save the voronoi data to disk for later use in the decomposable case}
     path := LabelPath("voronoi", lat["label"] : Create);
     contents := Sprintf("%o|%o|%o|%o|%o", lat["covering_norm_num"], lat["covering_norm_den"], lat["deep_hole_count"], lat["deep_hole_orbit_count"], lat["hole_count"]);
-    Write(path, contents);
+    Write(path, contents : Overwrite);   // Overwrite, not append: connect must be re-runnable (a stale file would otherwise double up and break LoadVdat's parse)
 end intrinsic;
 
 intrinsic LoadVdat(labels::SeqEnum[MonStgElt]) -> SeqEnum[Tup]
-{Given a sequence of lattice labels, load Voronoi data as a sequence of tuples (covering norm, num deep holes, num deep hole orbits, num holes).  If any not available, return empty sequence instead}
+{Given a sequence of lattice labels, load Voronoi data as a sequence of tuples (covering norm, num deep holes, num deep hole orbits, num holes).  If any not available, return empty sequence instead.  Connect is run rank-ascending (see run_all.py), so a decomposable lattice's strictly-lower-rank orthogonal factors are always already on disk here.}
     ans := [];
     for label in labels do
         if label eq "\\N" then return []; end if;   // a factor not in the database
@@ -563,11 +569,11 @@ intrinsic SaveSVdat(lat::Assoc)
     // to_postgres keeps "shortest" (a sequence of vectors) on a single line;
     // "%o" would print it across several lines and LoadSVdat reads only the first.
     contents := Sprintf("%o|%o|%o|%o|%o|%o|%o|%o|%o|%o|%o", lat["minimum"], to_postgres(lat["shortest"]), lat["is_well_rounded"], lat["is_minimal_vector_generated"], lat["is_strongly_well_rounded"], lat["is_eutactic"], lat["is_strongly_eutactic"], lat["t_design"], lat["perfection_defect"], lat["is_perfect"], lat["is_strongly_perfect"]);
-    Write(path, contents);
+    Write(path, contents : Overwrite);   // Overwrite, not append: connect must be re-runnable (a stale file would otherwise double up and break LoadSVdat's parse)
 end intrinsic;
 
 intrinsic LoadSVdat(labels::SeqEnum[MonStgElt]) -> SeqEnum
-{Given a sequence of lattice labels, load short-vector data for each as an associative array keyed by property name (minimum, shortest, is_well_rounded, ...), with booleans and integers parsed and "\N" denoting a missing value.  If any file is not available, return an empty sequence instead.}
+{Given a sequence of lattice labels, load short-vector data for each as an associative array keyed by property name (minimum, shortest, is_well_rounded, ...), with booleans and integers parsed and "\N" denoting a missing value.  If any file is not available, return an empty sequence instead.  Connect is run rank-ascending (see run_all.py), so a decomposable lattice's strictly-lower-rank orthogonal factors are always already on disk here.}
     ans := [];
     for label in labels do
         if label eq "\\N" then return []; end if;   // a factor not in the database
@@ -609,8 +615,134 @@ intrinsic AutOrbitCoords(L::Lat, A::GrpMat, vecs::SeqEnum) -> SeqEnum
     return [Eltseq(v) : v in AutOrbits(L, A, vecs)];
 end intrinsic;
 
-intrinsic ConnectGenus(label::MonStgElt : timeout := 1800)
-{Fill in lattice data that requires working with lattices in different genera}
+intrinsic DeriveDecomposableFields(~lat::Assoc, n::RngIntElt)
+{For a decomposable definite lattice of rank n, derive the geometric fields that combine
+over an orthogonal direct sum (deep-hole counts and the well-rounded / eutactic / perfect
+booleans) from its orthogonal factors' Voronoi and short-vector data, which must already
+be on disk.  Fields with no orthogonal-sum rule are left as they are ("\N").}
+    vdat := LoadVdat(lat["orthogonal_factors"]);
+    if #vdat gt 0 then
+        cnorm := 0;
+        num_deep_holes := 1;
+        num_deep_hole_orbits := 1;
+        num_holes := 1;
+        for i in [1..#vdat] do
+            cnn, cnd, ndh, ndho, nh := Explode(vdat[i]);
+            m := lat["orthogonal_multiplicities"][i];
+            cnorm +:= m * (cnn/cnd);
+            num_deep_holes *:= ndh^m;
+            num_deep_hole_orbits *:= Binomial(ndho + m - 1, m);
+            num_holes *:= nh^m;
+        end for;
+        lat["covering_norm"] := cnorm;
+        lat["deep_hole_count"] := num_deep_holes;
+        lat["deep_hole_orbit_count"] := num_deep_hole_orbits;
+        lat["hole_count"] := num_holes;
+    end if;
+
+    // Derive the short-vector properties that combine cleanly over an orthogonal
+    // direct sum.  Minimal vectors live entirely in the factors of smallest minimum,
+    // so a property such as well-roundedness holds for L iff every factor attains that
+    // minimum ("active") and has the property itself.
+    svdat := LoadSVdat(lat["orthogonal_factors"]);
+    if #svdat gt 0 then
+        mults := lat["orthogonal_multiplicities"];
+        ranks := [ StringToInteger(Split(f, ".")[1]) : f in lat["orthogonal_factors"] ];
+        minimum := Minimum([ d["minimum"] : d in svdat ]);
+        active := [ d["minimum"] eq minimum : d in svdat ];
+        all_active := &and active;
+        // "All factors active and each has the property": false if some factor is
+        // inactive or lacks it, "\N" if any value is unknown.
+        derive := function(key)
+            if not all_active then return false; end if;
+            vals := [ d[key] : d in svdat ];
+            if exists{ v : v in vals | v cmpeq "\\N" } then return "\\N"; end if;
+            return &and vals;
+        end function;
+        lat["is_well_rounded"]             := derive("is_well_rounded");
+        lat["is_minimal_vector_generated"] := derive("is_minimal_vector_generated");
+        lat["is_strongly_well_rounded"]    := derive("is_strongly_well_rounded");
+        lat["is_eutactic"]                 := derive("is_eutactic");
+        // Perfection defect: n(n+1)/2 minus the dimension spanned by the minimal
+        // vectors, which sit block-diagonally inside the active factors, so the
+        // spanned dimension adds up over those factors.
+        if forall{ i : i in [1..#svdat] | not active[i]
+                       or svdat[i]["perfection_defect"] cmpne "\\N" } then
+            perfrank := &+[ Integers() |
+                mults[i] * (ranks[i]*(ranks[i]+1) div 2 - svdat[i]["perfection_defect"])
+                : i in [1..#svdat] | active[i] ];
+            lat["perfection_defect"] := n*(n+1) div 2 - perfrank;
+            lat["is_perfect"] := (lat["perfection_defect"] eq 0);
+        end if;
+        // The remaining shell properties (shortest, is_strongly_eutactic, t_design,
+        // is_strongly_perfect) have no simple orthogonal-sum rule and are left "\N".
+    end if;
+end intrinsic;
+
+function SplitPipe(s)
+    // Split on "|" preserving empty fields.  Magma's Split drops empty tokens, which
+    // misaligns an advanced record whose columns can be empty strings (e.g. an empty
+    // root system serialises to "").
+    parts := [];
+    cur := "";
+    for i in [1..#s] do
+        if s[i] eq "|" then Append(~parts, cur); cur := ""; else cur := cur cat s[i]; end if;
+    end for;
+    Append(~parts, cur);
+    return parts;
+end function;
+
+function ParsePGList(s)
+    // Inverse of to_postgres for a flat sequence: "{a,b,c}" -> ["a","b","c"].  Labels
+    // contain "." but never "," so a plain split is safe; "{}" and "\N" -> [].
+    if s eq "\\N" or #s lt 2 then return []; end if;
+    inner := s[2..#s-1];   // strip the { }
+    if inner eq "" then return []; end if;
+    return Split(inner, ",");
+end function;
+
+intrinsic ConnectGenusDerive(label::MonStgElt)
+{Consume pass of the two-pass connect: for each decomposable lattice in this genus,
+derive the orthogonal-sum geometric fields the produce pass left "\N" from the factors'
+data (now guaranteed on disk) and patch them into the lattice's advanced record.}
+    SetColumns(0);
+    advanced_format := Split(Split(Read("lat_advanced.format"), "\n")[1], "|");
+    sl := Split(label, ".");
+    n := StringToInteger(sl[1]);
+    s := StringToInteger(sl[2]);
+    if s ne n then return; end if;   // indefinite: no definite geometry to derive
+    ii := Index(advanced_format, "is_indecomposable");
+    of_i := Index(advanced_format, "orthogonal_factors");
+    om_i := Index(advanced_format, "orthogonal_multiplicities");
+    // The fields DeriveDecomposableFields fills in for a decomposable lattice.
+    derived := ["deep_hole_count", "deep_hole_orbit_count", "hole_count",
+                "is_well_rounded", "is_minimal_vector_generated", "is_strongly_well_rounded",
+                "is_eutactic", "perfection_defect", "is_perfect"];
+    lats := load_hash_records(CollapseIntList(StringToBytes(label)), n, s);
+    for i in [1..#lats] do
+        path := LabelPath("lattice_advanced_data", lats[i]["label"]);
+        if not OpenTest(path, "r") then continue; end if;   // produce pass never wrote it (e.g. an upstream fill failure) -- nothing to derive
+        fields := SplitPipe(Split(Read(path), "\n")[1]);   // first line, empties preserved
+        error if #fields ne #advanced_format, "advanced record field count mismatch for", lats[i]["label"];
+        if fields[ii] ne "false" then continue; end if;   // only decomposable lattices
+        lat := AssociativeArray();
+        lat["orthogonal_factors"] := ParsePGList(fields[of_i]);
+        lat["orthogonal_multiplicities"] := [ StringToInteger(x) : x in ParsePGList(fields[om_i]) ];
+        for k in derived do lat[k] := "\\N"; end for;
+        DeriveDecomposableFields(~lat, n);
+        for k in derived do
+            fields[Index(advanced_format, k)] := Sprintf("%o", to_postgres(lat[k]));
+        end for;
+        Write(path, Join(fields, "|") : Overwrite);
+    end for;
+end intrinsic;
+
+intrinsic ConnectGenus(label::MonStgElt : timeout := 1800, derive_decomposable := true)
+{Fill in lattice data that requires working with lattices in different genera.  When
+derive_decomposable is false, decomposable lattices' orthogonal-sum-derived geometric
+fields are left "\N" for a later ConnectGenusDerive (consume) pass, so that every
+factor's data is guaranteed on disk before it is read (the "produce" pass of the
+two-pass connect in run_all.py).}
     SetColumns(0);
     advanced_format := Split(Split(Read("lat_advanced.format"), "\n")[1], "|");
     basic_format := Split(Split(Read("lat_basic.format"), "\n")[1], "|");
@@ -700,12 +832,21 @@ intrinsic ConnectGenus(label::MonStgElt : timeout := 1800)
         end for;
         if lat["is_indecomposable"] then
             aut_group := (lat["aut_group"] cmpne "\\N") select StringToGroup(lat["aut_group"]) else 0;
+            // aut_group is the integer 0 when the automorphism group is unknown ("\N",
+            // e.g. an AutomorphismGroup timeout -- more frequent at high rank).
+            // VoronoiData and AutOrbitCoords take a GrpMat, so passing 0 raises "Bad
+            // argument types"; guard on the group being present and otherwise leave
+            // those fields "\N" (they cannot be computed without it anyway).  (tDesign
+            // takes A := 0 as its default and handles the no-group case itself.)
+            have_aut := Type(aut_group) eq GrpMat;
             // In addition to the timeout, we may want to impose a rank limit
-            success, vdat, elapsed := TimeoutCall(timeout, VoronoiData, <L, aut_group>, 6);
-            if success then
-                lat["covering_norm_num"], lat["covering_norm_den"], lat["deep_holes"], lat["deep_hole_count"], lat["deep_hole_orbit_count"], lat["hole_count"] := Explode(vdat);
-                // We write the data to a file for loading in the decomposable case
-                SaveVdat(lat);
+            if have_aut then
+                success, vdat, elapsed := TimeoutCall(timeout, VoronoiData, <L, aut_group>, 6);
+                if success then
+                    lat["covering_norm_num"], lat["covering_norm_den"], lat["deep_holes"], lat["deep_hole_count"], lat["deep_hole_orbit_count"], lat["hole_count"] := Explode(vdat);
+                    // We write the data to a file for loading in the decomposable case
+                    SaveVdat(lat);
+                end if;
             end if;
 
             has_sv, S, elapsed := TimeoutCall(timeout, ShortestVectorCoords, <L>, 1);
@@ -715,7 +856,9 @@ intrinsic ConnectGenus(label::MonStgElt : timeout := 1800)
                 // serializable across the TimeoutCall fork), so rebuild them in L
                 half := [L ! c : c in S[1]];
                 S := half cat [-v : v in half];
-                TimeoutAssign(~lat, "shortest", AutOrbitCoords, <L, aut_group, S>, timeout);
+                if have_aut then
+                    TimeoutAssign(~lat, "shortest", AutOrbitCoords, <L, aut_group, S>, timeout);
+                end if;
                 TimeoutAssign(~lat, "is_well_rounded", IsWellRounded, <L, S>, timeout);
                 TimeoutAssign(~lat, "is_minimal_vector_generated", IsMinimalVectorGenerated, <L, S>, timeout);
                 TimeoutAssign(~lat, "is_strongly_well_rounded", IsStronglyWellRounded, <L, S>, timeout);
@@ -751,76 +894,31 @@ intrinsic ConnectGenus(label::MonStgElt : timeout := 1800)
                 end if;
                 SaveSVdat(lat);
             end if;
-        else
-            vdat := LoadVdat(lat["orthogonal_factors"]);
-            if #vdat gt 0 then
-                cnorm := 0;
-                num_deep_holes := 1;
-                num_deep_hole_orbits := 1;
-                num_holes := 1;
-                for i in [1..#vdat] do
-                    cnn, cnd, ndh, ndho, nh := Explode(vdat[i]);
-                    m := lat["orthogonal_multiplicities"][i];
-                    cnorm +:= m * (cnn/cnd);
-                    num_deep_holes *:= ndh^m;
-                    num_deep_hole_orbits *:= Binomial(ndho + m - 1, m);
-                    num_holes *:= nh^m;
-                end for;
-                lat["covering_norm"] := cnorm;
-                lat["deep_hole_count"] := num_deep_holes;
-                lat["deep_hole_orbit_count"] := num_deep_hole_orbits;
-                lat["hole_count"] := num_holes;
-            end if;
-
-            // Derive the short-vector properties that combine cleanly over an
-            // orthogonal direct sum.  Minimal vectors live entirely in the factors
-            // of smallest minimum, so a property such as well-roundedness holds for
-            // L iff every factor attains that minimum ("active") and has the
-            // property itself.
-            svdat := LoadSVdat(lat["orthogonal_factors"]);
-            if #svdat gt 0 then
-                mults := lat["orthogonal_multiplicities"];
-                ranks := [ StringToInteger(Split(f, ".")[1]) : f in lat["orthogonal_factors"] ];
-                minimum := Minimum([ d["minimum"] : d in svdat ]);
-                active := [ d["minimum"] eq minimum : d in svdat ];
-                all_active := &and active;
-                // "All factors active and each has the property": false if some
-                // factor is inactive or lacks it, "\N" if any value is unknown.
-                derive := function(key)
-                    if not all_active then return false; end if;
-                    vals := [ d[key] : d in svdat ];
-                    if exists{ v : v in vals | v cmpeq "\\N" } then return "\\N"; end if;
-                    return &and vals;
-                end function;
-                lat["is_well_rounded"]             := derive("is_well_rounded");
-                lat["is_minimal_vector_generated"] := derive("is_minimal_vector_generated");
-                lat["is_strongly_well_rounded"]    := derive("is_strongly_well_rounded");
-                lat["is_eutactic"]                 := derive("is_eutactic");
-                // Perfection defect: n(n+1)/2 minus the dimension spanned by the
-                // minimal vectors, which sit block-diagonally inside the active
-                // factors, so the spanned dimension adds up over those factors.
-                if forall{ i : i in [1..#svdat] | not active[i]
-                               or svdat[i]["perfection_defect"] cmpne "\\N" } then
-                    perfrank := &+[ Integers() |
-                        mults[i] * (ranks[i]*(ranks[i]+1) div 2 - svdat[i]["perfection_defect"])
-                        : i in [1..#svdat] | active[i] ];
-                    lat["perfection_defect"] := n*(n+1) div 2 - perfrank;
-                    lat["is_perfect"] := (lat["perfection_defect"] eq 0);
-                end if;
-                // The remaining shell properties (shortest, is_strongly_eutactic,
-                // t_design, is_strongly_perfect) have no simple orthogonal-sum rule
-                // (they need the factors' kissing numbers / shell designs) and are
-                // left as "\N" here.
-            end if;
+        elif derive_decomposable then
+            // Consumer step: derive this decomposable lattice's fields from its
+            // orthogonal factors' data.  Skipped when derive_decomposable is false
+            // (the "produce" pass), which leaves those fields "\N" for a later
+            // consume pass -- see the two-pass connect in run_all.py.
+            DeriveDecomposableFields(~lat, n);
         end if;
         end if;   // definite: orthogonal decomposition / Voronoi / shortest vectors
 
         // Decided when the theory is complete (rank <= 8, disc 2, Plesken III.1, ...);
         // discriminant 3-5 and the general high-rank case are left as "\N".
-        ai_ok, ai_data := TimeoutCall(timeout, IsAdditivelyIndecomposable, <L>, 2);
-        if ai_ok then
-            ai_val, ai_known := Explode(ai_data);
-            lat["is_additively_indecomposable"] := ai_known select ai_val else "\\N";
+        // is_additively_indecomposable is a positive-definite notion (whether the
+        // Gram matrix is a sum of two nonzero PSD integral matrices).  For indefinite
+        // L the low-rank branches return meaningless values and the rank 6-8 branch
+        // feeds L to IsIsometric, which requires positive-definiteness and fails with
+        // "Numerical GSO does not seem to be positive definite".  Only decide it in
+        // the definite case; leave it "\N" (undetermined) otherwise.
+        if definite then
+            ai_ok, ai_data := TimeoutCall(timeout, IsAdditivelyIndecomposable, <L>, 2);
+            if ai_ok then
+                ai_val, ai_known := Explode(ai_data);
+                lat["is_additively_indecomposable"] := ai_known select ai_val else "\\N";
+            else
+                lat["is_additively_indecomposable"] := "\\N";
+            end if;
         else
             lat["is_additively_indecomposable"] := "\\N";
         end if;

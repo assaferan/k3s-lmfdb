@@ -119,6 +119,16 @@ function genus_reps_Faster(L)
     return reps;
 end function;
 
+function genus_reps_Spinor(L)
+    // Indefinite lattices of rank >= 3: by Eichler each proper spinor genus is a single
+    // class, so the spinor-genus representatives ARE the genus representatives.  This is
+    // a fallback for when Magma's GenusRepresentatives fails (e.g. signature (2,2) rank 4
+    // -- "Illegal null sequence" in its number-field-lattice code); SpinorRepresentatives
+    // uses a different path and succeeds where GenusRepresentatives does not.
+    reps := SpinorRepresentatives(L);
+    return reps;
+end function;
+
 function SphereVolume(n)
     RR := RealField();
     pi := Pi(RR);
@@ -181,8 +191,17 @@ function genus_reps_square_disc(L0)
     return reps;
 end function;
 
-intrinsic FillGenus(label::MonStgElt : timeout := 1800)
-{Fill the data for a genus and its lattice representatives, given files in the genera_basic format.}
+intrinsic FillGenus(label::MonStgElt : timeout := 1800, masslimit := 0, sizelimit := 0, timelimit := 0, adjlimit := 0)
+{Fill the data for a genus and its lattice representatives, given files in the genera_basic format.
+
+Enumeration guards (0 = unlimited): masslimit skips enumerating a definite genus whose
+mass exceeds it (its class number is too large to enumerate); adjlimit skips the
+adjacency (Hecke) matrix once the class number exceeds it (its cost is ~class_number^2);
+sizelimit records the genus-level data but skips storing individual lattices past that
+class number; timelimit is a per-genus wall-clock cap on the per-lattice loop.  In every
+case the genus-level record is still written, so a guarded genus is bounded rather than
+either running for hours or going missing.}
+    genus_t0 := Realtime();
     data := Split(Split(Read(LabelPath("genera_basic", label)), "\n")[1], "|");
     basic_format := Split(Read("genera_basic.format"), "|");
     advanced_format := Split(Read("genera_advanced.format"), "|");
@@ -215,26 +234,52 @@ intrinsic FillGenus(label::MonStgElt : timeout := 1800)
     // forms, which reject square discriminants); these are handled directly.  Note
     // the class number is NOT always 1 -- e.g. for m = 5 some genera have two
     // classes.
-    if n eq 2 and IsSquare(-Determinant(L0)) then
+    // masslimit: a definite genus of mass M has class number on the order of M, so a
+    // very large mass means enumeration is hopeless -- skip it and keep only the
+    // (cheap) genus-level record.  Mass is only defined for definite genera; indefinite
+    // ones store "\N" here, so only parse it when definite.
+    skip_massive := false;
+    if (masslimit gt 0) and (n eq s) then
+        mass_pieces := Split(basics["mass"][2..#basics["mass"]-1], ",");
+        genus_mass := StringToInteger(mass_pieces[1]) / StringToInteger(mass_pieces[2]);
+        skip_massive := genus_mass gt masslimit;
+    end if;
+    if skip_massive then
+        vprintf FillGenus, 1 : "Skipping enumeration: mass exceeds masslimit %o\n", masslimit;
+        genus_success := false;
+    elif n eq 2 and IsSquare(-Determinant(L0)) then
         genus_success, reps, elapsed := TimeoutCall(timeout, genus_reps_square_disc, <L0>, 1);
         vprintf FillGenus, 1 : "Genus representatives (square discriminant) computed in %o seconds\n", elapsed;
+    elif (n eq s) and (n ge 3) then
+        // Definite rank >= 3: our own p-neighbour enumeration (GenusRepresentativesFaster)
+        // is the default.  It is mass-verified -- it enumerates until the accumulated
+        // sum of 1/|Aut| equals the genus mass -- so it is provably complete when it
+        // terminates.  It also avoids Magma's GenusRepresentatives, which is slow and
+        // reliably fails at rank >= 7 (the "cs must be non-empty" bug); we used to run
+        // it first and wait out its 60s timeout before falling back, ~60s wasted per
+        // high-rank genus.  Magma is used only where Faster does not apply (below).
+        genus_success, reps, elapsed := TimeoutCall(timeout, genus_reps_Faster, <L0>, 1);
+        vprintf FillGenus, 1 : "Genus representatives (p-neighbours) computed in %o seconds\n", elapsed;
+    elif (n ne s) and (n ge 3) then
+        // Indefinite rank >= 3: SpinorRepresentatives is the default.  By Eichler each
+        // proper spinor genus is a single class, so the spinor-genus representatives ARE
+        // the genus representatives -- provably exact here.  It also avoids Magma's
+        // GenusRepresentatives, which fails on some indefinite genera (e.g. signature
+        // (2,2) rank 4 -- "Illegal null sequence" / "cs must be non-empty" in its LatNF
+        // code) and is slower even when it works.
+        genus_success, reps, elapsed := TimeoutCall(timeout, genus_reps_Spinor, <L0>, 1);
+        vprintf FillGenus, 1 : "Genus representatives (spinor genera) computed in %o seconds\n", elapsed;
     else
+        // Rank 1-2: neither Faster (needs definite rank >= 3) nor the spinor route (needs
+        // rank >= 3, indefinite) applies, so use Magma's general GenusRepresentatives.
         genus_success, reps, elapsed := TimeoutCall(timeout, genus_reps_Magma, <L0>, 1);
         vprintf FillGenus, 1 : "Genus representatives computed in %o seconds\n", elapsed;
-        if (not genus_success) and (n eq s) and (n ge 3) then
-            // Magma's GenusRepresentatives fails on some definite genera (e.g. a
-            // rank-4 "Illegal null sequence" in its number-field-lattice Norm); fall
-            // back to our own mass-verified p-neighbour enumeration.  Restricted to
-            // definite (needs a mass) rank >= 3, where the p-neighbour method is
-            // reliable -- it is not trustworthy/terminating for rank 2.
-            vprintf FillGenus, 1 : "GenusRepresentatives failed; falling back to p-neighbours\n";
-            genus_success, reps, elapsed := TimeoutCall(timeout, genus_reps_Faster, <L0>, 1);
-        end if;
     end if;
     advanced["class_number"] := "\\N";
     advanced["adjacency_matrix"] := "\\N";
     advanced["adjacency_polynomials"] := "\\N";
     advanced["ambient_lattice"] := "\\N";   // TODO: compute the ambient lattice
+    have_adjacency := false;   // set below iff the adjacency (Hecke) matrix is computed
     if genus_success then
         reps := reps[1];
         vprintf FillGenus, 1 : "Number of genus representatives: %o\n", #reps;
@@ -246,7 +291,13 @@ intrinsic FillGenus(label::MonStgElt : timeout := 1800)
         // This works for 2.28 - should be replaced by SetGenus in 2.29
         G`Representatives := reps;
         G`IsNatural := true;
-        if (n eq s) then
+        // The adjacency (Hecke) matrix is class_number x class_number and built by
+        // p-neighbour walks -- an O(class_number^2) cost that dominates fill for
+        // moderate class numbers at high rank (a single rank-8 class-~300 genus can take
+        // hours).  Gate it on adjlimit, a much lower cap than sizelimit; the class number
+        // is still recorded, and pneighbors below is emitted only when the matrix exists.
+        have_adjacency := (n eq s) and ((adjlimit le 0) or (#reps le adjlimit));
+        if have_adjacency then
           for p in hecke_primes(n) do
             vprintf FillGenus, 1 : "%o:", p;
             vtime FillGenus, 1 : Ap := AdjacencyMatrix(G,p);
@@ -259,6 +310,12 @@ intrinsic FillGenus(label::MonStgElt : timeout := 1800)
           advanced["adjacency_polynomials"] := to_postgres(hecke_polys);
         end if;
     else
+        reps := [];
+    end if;
+    // sizelimit: past this class number, keep the genus-level record but skip the
+    // per-lattice loop below (individual automorphism groups, theta series, hashes).
+    if (sizelimit gt 0) and (#reps gt sizelimit) then
+        vprintf FillGenus, 1 : "Class number %o exceeds sizelimit %o: storing genus-level data only\n", #reps, sizelimit;
         reps := [];
     end if;
     disc_invs := basics["discriminant_group_invs"];
@@ -280,7 +337,16 @@ intrinsic FillGenus(label::MonStgElt : timeout := 1800)
     // change in future -- e.g. to the mean or to per-representative timings.
     theta_elapsed := AssociativeArray();
 
+    // timelimit: a per-genus wall-clock backstop.  If the per-lattice work overruns it
+    // (a genus under sizelimit whose individual lattices are still pathologically slow),
+    // stop and fall back to the genus-level record rather than grinding for hours.
+    genus_timed_out := false;
     for Li->L in reps do
+        if (timelimit gt 0) and (Realtime(genus_t0) gt timelimit) then
+            vprintf FillGenus, 1 : "Per-genus timelimit %o s exceeded at rep %o/%o: storing genus-level data only\n", timelimit, Li, #reps;
+            genus_timed_out := true;
+            break;
+        end if;
         lat := AssociativeArray();
         lat["lattice"] := L; // useful for subroutines; removed before saving to disk
         for col in ["rank", "nplus", "nminus", "disc_abs", "disc_sign", "disc_radical", "disc_witt", "disc_geometric", "disc_quadratic", "disc_half", "disc_2adic_unit", "bad_primes", "discriminant_group_invs", "discriminant_group_exponent", "is_even", "level", "scale", "conway_symbol", "dual_conway_symbol"] do
@@ -440,6 +506,11 @@ intrinsic FillGenus(label::MonStgElt : timeout := 1800)
         Append(~lats, lat);
     end for;
 
+    // If the per-genus timelimit tripped mid-loop, discard the partial lattices so the
+    // record is consistent (class_number set, genus-level data only) rather than
+    // claiming a class number it did not store.
+    if genus_timed_out then lats := []; end if;
+
     vprintf FillGenus, 1 : "Done!\n";
 
     function cmp_lat(L1, L2)
@@ -521,7 +592,7 @@ intrinsic FillGenus(label::MonStgElt : timeout := 1800)
 
     for idx->L in lats do
         lat := L;
-        if genus_success and (n eq s) then
+        if have_adjacency then   // pneighbors are read off the Hecke matrix, so only when it was computed
             pNeighbors := AssociativeArray();
             for p in hecke_primes(n) do
                 // !!! TODO - check that permutation is applied in the right direction

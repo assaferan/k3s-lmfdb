@@ -20,6 +20,16 @@ SetVerbose("FillGenus", StringToInteger(verbose));
 if not assigned timeout then timeout := "60"; end if;
 timeout := StringToInteger(timeout);
 
+// Enumeration guards (0 = unlimited): see FillGenus.
+if not assigned masslimit then masslimit := "0"; end if;
+masslimit := StringToInteger(masslimit);
+if not assigned sizelimit then sizelimit := "0"; end if;
+sizelimit := StringToInteger(sizelimit);
+if not assigned timelimit then timelimit := "0"; end if;
+timelimit := StringToInteger(timelimit);
+if not assigned adjlimit then adjlimit := "0"; end if;
+adjlimit := StringToInteger(adjlimit);
+
 if assigned labels then
     label_list := Split(labels, ":");
 else
@@ -30,7 +40,7 @@ procedure() // forcing magma to read the full input before forking
 failed := [];
 for l in label_list do
     try
-        FillGenus(l : timeout := timeout);
+        FillGenus(l : timeout := timeout, masslimit := masslimit, sizelimit := sizelimit, timelimit := timelimit, adjlimit := adjlimit);
     catch e
         printf "ERROR: %o: %o\n", l, e;
         Append(~failed, l);

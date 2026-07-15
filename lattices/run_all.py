@@ -37,6 +37,7 @@ parser.add_argument("-b", "--batch-mass", type=int, default=128, help="Batch gen
 parser.add_argument("--enum-masslimit", type=int, default=1000, help="If the mass of a genus is larger than this threshold, don't even try to enumerate lattices within")
 parser.add_argument("--enum-timelimit", type=int, default=300, help="Maximum number of seconds to spend on enumerating a genus") # TODO: calibrate this based on how much time we want to spend
 parser.add_argument("--enum-sizelimit", type=int, default=1000, help="For genera with class number larger than this, do not store individual lattices within the genus")
+parser.add_argument("--enum-adjlimit", type=int, default=100, help="For genera with class number larger than this, do not compute the adjacency (Hecke) matrix (its cost is ~class_number^2, so it dominates fill for moderate class numbers at high rank)")
 
 # Skip stages
 parser.add_argument("--skip-list-genera", action="store_true", help="Assume that genera have already been listed")
@@ -170,7 +171,14 @@ def main():
     gcount = build_enumeration_inputs("genus_jobs.txt")
     if not args.skip_enumerate_genera:
         with timed(f"Enumerating genera ({gcount} batches)"):
-            parallel("genus_jobs.txt", "fill.joblog", ["labels:={1}", "run_fill_genus.m"])
+            # Pass the enumeration guards through to FillGenus so a few pathological
+            # high-rank genera can't dominate wall-clock (they otherwise run for hours):
+            # skip enumerating past enum-masslimit, store genus-level data only past
+            # enum-sizelimit, and cap per-genus wall-clock at enum-timelimit.
+            parallel("genus_jobs.txt", "fill.joblog",
+                     [f"masslimit:={args.enum_masslimit}", f"sizelimit:={args.enum_sizelimit}",
+                      f"timelimit:={args.enum_timelimit}", f"adjlimit:={args.enum_adjlimit}",
+                      "labels:={1}", "run_fill_genus.m"])
 
     if not args.skip_embeddings:
         print("Finding lattice embeddings (TODO: Oscar embedding code)")
@@ -216,8 +224,21 @@ def main():
             print(f"Named {len(best)} atomic lattices (merged from {args.jobs} workers).", flush=True)
 
     if not args.skip_connect:
-        with timed("Connecting genera"):
-            parallel("genus_jobs.txt", "connect.joblog", ["labels:={1}", "run_connect_genus.m"])
+        # Connect in two passes.  A decomposable lattice derives its geometric fields
+        # (eutaxy, covering radius, deep holes, ...) from its orthogonal factors --
+        # strictly lower-rank lattices in other genera whose data is written during
+        # connect.  A single flat pass that processed a composite before its factors
+        # silently dropped those fields to \N.  So: pass 1 ("produce") runs the full
+        # connect for every genus but skips the decomposable derivations, which writes
+        # every indecomposable factor's data to disk; pass 2 ("consume") then derives
+        # the decomposable fields with all factor data guaranteed present.  Both passes
+        # are flat and fully parallel; the only barrier is between them.
+        with timed("Connecting genera (pass 1: produce)"):
+            parallel("genus_jobs.txt", "connect1.joblog",
+                     ["labels:={1}", "phase:=1", "run_connect_genus.m"])
+        with timed("Connecting genera (pass 2: consume)"):
+            parallel("genus_jobs.txt", "connect2.joblog",
+                     ["labels:={1}", "phase:=2", "run_connect_genus.m"])
 
 if __name__ == "__main__":
     main()

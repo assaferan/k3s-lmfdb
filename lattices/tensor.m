@@ -218,7 +218,15 @@ If recursing is false, the output is the sequence of tuples <label, decompositio
                 Append(~ans, <lat, decomp, D>);
                 Append(~Ds, D);
             else
-                Append(~ans, <FindLabel(lat), decomp>);
+                // FindLabel returns "\N" when the tensor product's genus is not in the
+                // database (its genus was not enumerated, or -- at high rank/det -- fill
+                // failed for it); such a product has no label to key on, so skip it
+                // rather than letting "\N" reach SortLabels (which parses labels as
+                // rank.nplus.det and would crash on StringToInteger("\N")).
+                lbl := FindLabel(lat);
+                if lbl ne "\\N" then
+                    Append(~ans, <lbl, decomp>);
+                end if;
             end if;
         end for;
     end for;
