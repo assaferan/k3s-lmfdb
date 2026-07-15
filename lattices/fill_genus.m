@@ -119,6 +119,16 @@ function genus_reps_Faster(L)
     return reps;
 end function;
 
+function genus_reps_Spinor(L)
+    // Indefinite lattices of rank >= 3: by Eichler each proper spinor genus is a single
+    // class, so the spinor-genus representatives ARE the genus representatives.  This is
+    // a fallback for when Magma's GenusRepresentatives fails (e.g. signature (2,2) rank 4
+    // -- "Illegal null sequence" in its number-field-lattice code); SpinorRepresentatives
+    // uses a different path and succeeds where GenusRepresentatives does not.
+    reps := SpinorRepresentatives(L);
+    return reps;
+end function;
+
 function SphereVolume(n)
     RR := RealField();
     pi := Pi(RR);
@@ -250,10 +260,18 @@ either running for hours or going missing.}
         // high-rank genus.  Magma is used only where Faster does not apply (below).
         genus_success, reps, elapsed := TimeoutCall(timeout, genus_reps_Faster, <L0>, 1);
         vprintf FillGenus, 1 : "Genus representatives (p-neighbours) computed in %o seconds\n", elapsed;
+    elif (n ne s) and (n ge 3) then
+        // Indefinite rank >= 3: SpinorRepresentatives is the default.  By Eichler each
+        // proper spinor genus is a single class, so the spinor-genus representatives ARE
+        // the genus representatives -- provably exact here.  It also avoids Magma's
+        // GenusRepresentatives, which fails on some indefinite genera (e.g. signature
+        // (2,2) rank 4 -- "Illegal null sequence" / "cs must be non-empty" in its LatNF
+        // code) and is slower even when it works.
+        genus_success, reps, elapsed := TimeoutCall(timeout, genus_reps_Spinor, <L0>, 1);
+        vprintf FillGenus, 1 : "Genus representatives (spinor genera) computed in %o seconds\n", elapsed;
     else
-        // Rank 2 (non-square determinant) or indefinite: Faster is not usable here --
-        // the p-neighbour method does not terminate at rank 2, and there is no mass to
-        // verify completeness for indefinite genera -- so use Magma's general builtin.
+        // Rank 1-2: neither Faster (needs definite rank >= 3) nor the spinor route (needs
+        // rank >= 3, indefinite) applies, so use Magma's general GenusRepresentatives.
         genus_success, reps, elapsed := TimeoutCall(timeout, genus_reps_Magma, <L0>, 1);
         vprintf FillGenus, 1 : "Genus representatives computed in %o seconds\n", elapsed;
     end if;
