@@ -129,6 +129,13 @@ function genus_reps_Spinor(L)
     return reps;
 end function;
 
+function adjacency_matrix_of(G, p)
+    // Wrapped so it can run under TimeoutCall: AdjacencyMatrix walks the p-neighbour graph
+    // in a C-level builtin that does not yield to Magma's Alarm, so it needs the HardKill
+    // watchdog to be bounded (it can take >75s for a single rank-8 genus).
+    return AdjacencyMatrix(G, p);
+end function;
+
 function SphereVolume(n)
     RR := RealField();
     pi := Pi(RR);
@@ -195,8 +202,9 @@ intrinsic FillGenus(label::MonStgElt : timeout := 1800, masslimit := 0, sizelimi
 {Fill the data for a genus and its lattice representatives, given files in the genera_basic format.
 
 Enumeration guards (0 = unlimited): masslimit skips enumerating a definite genus whose
-mass exceeds it (its class number is too large to enumerate); adjlimit skips the
-adjacency (Hecke) matrix once the class number exceeds it (its cost is ~class_number^2);
+mass exceeds it (its class number is too large to enumerate); adjlimit is a work budget
+for the adjacency (Hecke) matrix -- skip it when the estimated work, ~class_number times
+sum_p p^(rank-2) over the Hecke primes p, exceeds adjlimit;
 sizelimit records the genus-level data but skips storing individual lattices past that
 class number; timelimit is a per-genus wall-clock cap on the per-lattice loop.  In every
 case the genus-level record is still written, so a guarded genus is bounded rather than
@@ -248,7 +256,7 @@ either running for hours or going missing.}
         vprintf FillGenus, 1 : "Skipping enumeration: mass exceeds masslimit %o\n", masslimit;
         genus_success := false;
     elif n eq 2 and IsSquare(-Determinant(L0)) then
-        genus_success, reps, elapsed := TimeoutCall(timeout, genus_reps_square_disc, <L0>, 1);
+        genus_success, reps, elapsed := TimeoutCall(timeout, genus_reps_square_disc, <L0>, 1 : HardKill := true);
         vprintf FillGenus, 1 : "Genus representatives (square discriminant) computed in %o seconds\n", elapsed;
     elif (n eq s) and (n ge 3) then
         // Definite rank >= 3: our own p-neighbour enumeration (GenusRepresentativesFaster)
@@ -258,7 +266,7 @@ either running for hours or going missing.}
         // reliably fails at rank >= 7 (the "cs must be non-empty" bug); we used to run
         // it first and wait out its 60s timeout before falling back, ~60s wasted per
         // high-rank genus.  Magma is used only where Faster does not apply (below).
-        genus_success, reps, elapsed := TimeoutCall(timeout, genus_reps_Faster, <L0>, 1);
+        genus_success, reps, elapsed := TimeoutCall(timeout, genus_reps_Faster, <L0>, 1 : HardKill := true);
         vprintf FillGenus, 1 : "Genus representatives (p-neighbours) computed in %o seconds\n", elapsed;
     elif (n ne s) and (n ge 3) then
         // Indefinite rank >= 3: SpinorRepresentatives is the default.  By Eichler each
@@ -267,12 +275,12 @@ either running for hours or going missing.}
         // GenusRepresentatives, which fails on some indefinite genera (e.g. signature
         // (2,2) rank 4 -- "Illegal null sequence" / "cs must be non-empty" in its LatNF
         // code) and is slower even when it works.
-        genus_success, reps, elapsed := TimeoutCall(timeout, genus_reps_Spinor, <L0>, 1);
+        genus_success, reps, elapsed := TimeoutCall(timeout, genus_reps_Spinor, <L0>, 1 : HardKill := true);
         vprintf FillGenus, 1 : "Genus representatives (spinor genera) computed in %o seconds\n", elapsed;
     else
         // Rank 1-2: neither Faster (needs definite rank >= 3) nor the spinor route (needs
         // rank >= 3, indefinite) applies, so use Magma's general GenusRepresentatives.
-        genus_success, reps, elapsed := TimeoutCall(timeout, genus_reps_Magma, <L0>, 1);
+        genus_success, reps, elapsed := TimeoutCall(timeout, genus_reps_Magma, <L0>, 1 : HardKill := true);
         vprintf FillGenus, 1 : "Genus representatives computed in %o seconds\n", elapsed;
     end if;
     advanced["class_number"] := "\\N";
@@ -291,23 +299,44 @@ either running for hours or going missing.}
         // This works for 2.28 - should be replaced by SetGenus in 2.29
         G`Representatives := reps;
         G`IsNatural := true;
-        // The adjacency (Hecke) matrix is class_number x class_number and built by
-        // p-neighbour walks -- an O(class_number^2) cost that dominates fill for
-        // moderate class numbers at high rank (a single rank-8 class-~300 genus can take
-        // hours).  Gate it on adjlimit, a much lower cap than sizelimit; the class number
-        // is still recorded, and pneighbors below is emitted only when the matrix exists.
-        have_adjacency := (n eq s) and ((adjlimit le 0) or (#reps le adjlimit));
+        // The adjacency (Hecke) matrix walks the p-neighbour graph: each of the #reps
+        // representatives has ~p^(n-2) p-neighbours (the isotropic lines in L/pL), each
+        // needing an isometry test.  So the work is ~ #reps * sum_p p^(n-2), which grows
+        // as p^(n-2) with rank -- a single rank-12 genus costs 16x a rank-8 one even at
+        // class number 1.  We estimate that work and skip the matrix past adjlimit (a
+        // work budget), an adaptive cutoff that captures both the rank and class-number
+        // dependence, rather than a crude cap on either alone.  The class number is still
+        // recorded, and pneighbors below is emitted only when the matrix exists.
+        adj_work := #reps * (&+[Integers() | p^Maximum(n-2, 0) : p in hecke_primes(n)]);
+        have_adjacency := (n eq s) and ((adjlimit le 0) or (adj_work le adjlimit));
         if have_adjacency then
+          adj_ok := true;
           for p in hecke_primes(n) do
             vprintf FillGenus, 1 : "%o:", p;
-            vtime FillGenus, 1 : Ap := AdjacencyMatrix(G,p);
+            // Bound the adjacency computation: it is an uninterruptible builtin that can
+            // run for well over a minute on a single high-rank genus, so it needs the
+            // HardKill watchdog.  If it overruns we drop the (optional) Hecke data for
+            // this genus -- the class number is already recorded -- rather than let a few
+            // genera dominate wall-clock.
+            adj_success, adj_out, adj_elapsed := TimeoutCall(timeout, adjacency_matrix_of, <G, p>, 1 : HardKill := true);
+            if not adj_success then
+                vprintf FillGenus, 1 : "(timed out after ~%os, skipping Hecke data)\n", timeout;
+                adj_ok := false;
+                break;
+            end if;
+            Ap := adj_out[1];
+            vprintf FillGenus, 1 : "computed in %o seconds\n", adj_elapsed;
             fpf := Factorization(CharacteristicPolynomial(Ap));
             hecke_mats[p] := Ap;
             hecke_polys[p] := [(<Coefficients(pair[1]), pair[2]>) : pair in fpf];
           end for;
-          vprintf FillGenus, 1 : "Done!\n";
-          advanced["adjacency_matrix"] := to_postgres(hecke_mats);
-          advanced["adjacency_polynomials"] := to_postgres(hecke_polys);
+          if adj_ok then
+            vprintf FillGenus, 1 : "Done!\n";
+            advanced["adjacency_matrix"] := to_postgres(hecke_mats);
+            advanced["adjacency_polynomials"] := to_postgres(hecke_polys);
+          else
+            have_adjacency := false;   // no Hecke data -> the pneighbors block below is skipped
+          end if;
         end if;
     else
         reps := [];

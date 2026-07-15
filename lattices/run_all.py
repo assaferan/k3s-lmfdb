@@ -32,12 +32,13 @@ parser.add_argument("-k", "--nokthree", action="store_true", help="By default, w
 # Parallelization
 parser.add_argument("-j", "--jobs", type=int, default=128, help="Number of parallel processes to use")
 parser.add_argument("-b", "--batch-mass", type=int, default=128, help="Batch genus enumeration instances together until the total mass exceeds this amount")
+parser.add_argument("--batch-size", type=int, default=32, help="Also flush a genus-enumeration batch once it holds this many genera, regardless of mass.  Mass is a poor proxy for work at high rank: high-rank genera have huge automorphism groups, so their mass is tiny (~1e-6) and hundreds of expensive genera would otherwise pack into a single mass-bounded batch, making it run for tens of minutes (and degrade further as memory accumulates).  Keeping batches small also bounds per-batch memory bloat and improves parallelism.")
 
 # Don't store too many lattices
 parser.add_argument("--enum-masslimit", type=int, default=1000, help="If the mass of a genus is larger than this threshold, don't even try to enumerate lattices within")
 parser.add_argument("--enum-timelimit", type=int, default=300, help="Maximum number of seconds to spend on enumerating a genus") # TODO: calibrate this based on how much time we want to spend
 parser.add_argument("--enum-sizelimit", type=int, default=1000, help="For genera with class number larger than this, do not store individual lattices within the genus")
-parser.add_argument("--enum-adjlimit", type=int, default=100, help="For genera with class number larger than this, do not compute the adjacency (Hecke) matrix (its cost is ~class_number^2, so it dominates fill for moderate class numbers at high rank)")
+parser.add_argument("--enum-adjlimit", type=int, default=20000, help="Work budget for the adjacency (Hecke) matrix: skip it when the estimated work (~class_number * sum_p p^(rank-2) over the Hecke primes p) exceeds this.  The p-neighbour cost grows as p^(rank-2), so this adaptively cuts off high rank and/or high class number.  Default is high enough to compute it through ~rank 12 at small determinant (where it is cheap) and only guard genuinely extreme cases; lower it if adjacency becomes a bottleneck at large determinant.")
 
 # Skip stages
 parser.add_argument("--skip-list-genera", action="store_true", help="Assume that genera have already been listed")
@@ -112,7 +113,7 @@ def build_enumeration_inputs(fname):
                 else:
                     m += 1 # pretend indefinite genera have mass 1
                 labels.append(genus.name)
-                if m > M:
+                if m > M or len(labels) >= args.batch_size:
                     _ = Fout.write(":".join(labels) + "\n")
                     m = 0
                     labels = []
