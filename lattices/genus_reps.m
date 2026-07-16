@@ -508,8 +508,6 @@ function glue_scored(L, dual_norm_bound, rank_cap, use_cache)
     return scored;
 end function;
 
-forward genus_reps_orth_rec;
-
 // Enumerate the genus of the positive definite lattice L, preferring the orbit
 // method and falling back to (and topping up with) the p-neighbour walk.
 function genus_reps_orth_rec(L, depth, dual_norm_bound, max_vecs, rank_cap, use_cache)
