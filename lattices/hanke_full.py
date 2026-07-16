@@ -467,8 +467,14 @@ def is_overlattice(L1, L2):
 
     return all(c in ZZ for c in coords.list())
 
-def maximal_overlattice_2(L_in, do_asserts=True):
+def maximal_overlattice_2(L_in, p=None, do_asserts=True):
     """Maximal INTEGRAL overlattice of L_in, with odd results allowed.
+
+    p restricts the construction to a single prime: the result is maximal at p and
+    unchanged at every other prime.  This mirrors Sage's maximal_overlattice(p=...) --
+    whose only difference from the p=None case is likewise which primes it loops over --
+    so that this can stand in for it at both call sites, including the
+    maximal_overlattice(p=p) inside local_modification.
 
     Which notion this is matters, because there are two.  The isotropy test below is the
     one for the discriminant BILINEAR form -- adjoin a class when b(v,w) stays integral --
@@ -494,9 +500,12 @@ def maximal_overlattice_2(L_in, do_asserts=True):
     M = L_sat.gram_matrix()
     Minv = M.inverse()   # over QQ
     detM = Integer(M.determinant())
-    ps = detM.prime_factors()
-    if 2 not in ps:
-        ps.append(2)
+    if p is None:
+        ps = detM.prime_factors()
+        if 2 not in ps:
+            ps.append(2)          # 2 is always visited: finish() settles parity there
+    else:
+        ps = [Integer(p)]         # maximal at p only, other primes untouched
 
     # Adjoin one prime at a time, recomputing the Gram in between, rather than pooling
     # every prime's vectors into a single overlattice() call.  The F_p model below only
@@ -575,7 +584,13 @@ def maximal_overlattice_2(L_in, do_asserts=True):
             M = B * IPM * B.transpose()
 
     L_sat = IntegralLattice(IPM, B)     # build the lattice object once, at the end
-    L_sat = finish(L_sat)
+    # finish() settles parity, which is a purely 2-adic matter, so it must not run when we
+    # were asked to work at an odd prime: local_modification calls maximal_overlattice(p=p)
+    # on lattices it deliberately leaves odd, and even-ifying there changes the lattice at
+    # 2 when only p was meant to move (at p=5 it returned the even sublattice, det 4, where
+    # Sage gives det 1).
+    if p is None or p == 2:
+        L_sat = finish(L_sat)
     if do_asserts:
         # Do NOT compare this against Sage's maximal_overlattice: they compute different
         # things.  Sage returns the maximal EVEN overlattice ("Return a maximal even
