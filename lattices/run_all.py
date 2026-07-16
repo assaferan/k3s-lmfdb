@@ -42,6 +42,7 @@ parser.add_argument("--enum-timeout", type=int, default=300, help="Seconds allow
 parser.add_argument("--enum-timelimit", type=int, default=900, help="Maximum wall-clock seconds for a genus's per-lattice loop.  Overrunning it does NOT keep partial data: FillGenus discards every lattice of that genus (a partial set would contradict the recorded class_number) and keeps only the genus-level record.  So this is a coverage switch, not a speed knob -- and because it is wall-clock, it makes database contents depend on machine load, which is why --enum-masslimit is the better place to express a real coverage policy.  Calibrated at C=256: definite rank 9-12 genera need 97-1005s to COMPLETE (medians 221/460/384/693s by rank), so 900 completes ~97% of them; 300 (the old default) silently discarded every lattice of most rank 10-12 genera, and 60 discarded essentially all of rank 9-12.")
 parser.add_argument("--enum-sizelimit", type=int, default=1000, help="For genera with class number larger than this, do not store individual lattices within the genus")
 parser.add_argument("--enum-adjlimit", type=int, default=0, help="Work budget for the adjacency (Hecke) matrix: skip it when the estimated work (~class_number * sum_p p^(rank-2) over the Hecke primes p) exceeds this; 0 = no budget, always attempt it.  Defaults to 0 because the estimate mis-prices reality badly -- at rank 7 the sum_p p^5 term crosses a 20000 budget at class number 6, yet a whole rank-7 genus fills in ~4s, so a budget of 20000 silently dropped Hecke data for 65 rank-7 genera (4.4%% of definite genera overall) that were never expensive.  AdjacencyMatrix now runs under a hard-killed TimeoutCall, which bounds it by measured time instead of a bad model; prefer that.  Set this only if you specifically want to skip adjacency without even trying.")
+parser.add_argument("--no-orth", action="store_true", help="Disable the orbit-method genus enumeration (use the p-neighbour walk only)")
 
 # Skip stages
 parser.add_argument("--skip-list-genera", action="store_true", help="Assume that genera have already been listed")
@@ -223,7 +224,9 @@ def main():
             parallel("genus_jobs.txt", "fill.joblog",
                      [f"timeout:={args.enum_timeout}", f"masslimit:={args.enum_masslimit}",
                       f"sizelimit:={args.enum_sizelimit}", f"timelimit:={args.enum_timelimit}",
-                      f"adjlimit:={args.enum_adjlimit}", "labels:={1}", "run_fill_genus.m"])
+                      f"adjlimit:={args.enum_adjlimit}",
+                      f"useorth:={0 if args.no_orth else 1}",
+                      "labels:={1}", "run_fill_genus.m"])
 
     if not args.skip_embeddings:
         print("Finding lattice embeddings (TODO: Oscar embedding code)")
