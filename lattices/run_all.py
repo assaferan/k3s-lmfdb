@@ -38,6 +38,7 @@ parser.add_argument("--batch-size", type=int, default=32, help="Backstop cap on 
 
 # Don't store too many lattices
 parser.add_argument("--enum-masslimit", type=int, default=1000, help="If the mass of a genus is larger than this threshold, don't even try to enumerate lattices within")
+parser.add_argument("--enum-per-lattice-timeout", type=int, default=0, help="Wall-clock seconds each individual lattice gets for its own computations (canonical form, automorphism group, theta series).  0 (the default) instead splits enum-timeout across the genus, giving each lattice enum-timeout/class_number.  That split looks like starvation -- at enum-timeout 300 a class-number-55 genus allows each lattice only 6s, and CanonicalForm alone measures 8-66s at rank 12, so ~1% of lattices get \\N in those columns -- but it is self-consistent: it bounds the per-lattice loop to roughly enum-timeout, so the genus always finishes and stores its lattices.  Setting a fixed budget here removes that bound, and since a genus overrunning --enum-timelimit has ALL of its lattices discarded, it converts partial data into no data unless --enum-timelimit is raised to about class_number times this value.  Measured on a rank-12 class-number-55 genus: the default stored 55 lattices (4 with a null canonical_gram) in 813s, while perlattice=120 at timelimit=900 stored 0 lattices in 1007s.  Erasing that ~1% of nulls costs roughly 8x the runtime, so raise this only deliberately, together with --enum-timelimit.")
 parser.add_argument("--enum-timeout", type=int, default=300, help="Seconds allowed for the genus-representatives computation of a single genus.  This was previously not passed through at all, so it silently fell back to run_fill_genus.m's 60s default and 1.8%% of definite genera (all rank 11-12) failed to enumerate entirely -- no class number and no lattices, a hole that null-scanning cannot see since the genus is simply absent from the per-lattice tables.  The computation is hard-killed past this, so it still bounds the worst case.")
 parser.add_argument("--enum-timelimit", type=int, default=900, help="Maximum wall-clock seconds for a genus's per-lattice loop.  Overrunning it does NOT keep partial data: FillGenus discards every lattice of that genus (a partial set would contradict the recorded class_number) and keeps only the genus-level record.  So this is a coverage switch, not a speed knob -- and because it is wall-clock, it makes database contents depend on machine load, which is why --enum-masslimit is the better place to express a real coverage policy.  Calibrated at C=256: definite rank 9-12 genera need 97-1005s to COMPLETE (medians 221/460/384/693s by rank), so 900 completes ~97% of them; 300 (the old default) silently discarded every lattice of most rank 10-12 genera, and 60 discarded essentially all of rank 9-12.")
 parser.add_argument("--enum-sizelimit", type=int, default=1000, help="For genera with class number larger than this, do not store individual lattices within the genus")
@@ -223,7 +224,9 @@ def main():
             parallel("genus_jobs.txt", "fill.joblog",
                      [f"timeout:={args.enum_timeout}", f"masslimit:={args.enum_masslimit}",
                       f"sizelimit:={args.enum_sizelimit}", f"timelimit:={args.enum_timelimit}",
-                      f"adjlimit:={args.enum_adjlimit}", "labels:={1}", "run_fill_genus.m"])
+                      f"adjlimit:={args.enum_adjlimit}",
+                      f"perlattice:={args.enum_per_lattice_timeout}",
+                      "labels:={1}", "run_fill_genus.m"])
 
     if not args.skip_embeddings:
         print("Finding lattice embeddings (TODO: Oscar embedding code)")

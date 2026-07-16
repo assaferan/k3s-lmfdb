@@ -29,6 +29,10 @@ if not assigned timelimit then timelimit := "0"; end if;
 timelimit := StringToInteger(timelimit);
 if not assigned adjlimit then adjlimit := "0"; end if;
 adjlimit := StringToInteger(adjlimit);
+// Wall-clock each individual lattice gets (canonical form, automorphism group, theta).
+// 0 falls back to the old timeout/class_number budget.  See FillGenus.
+if not assigned perlattice then perlattice := "0"; end if;
+perlattice := StringToInteger(perlattice);
 
 if assigned labels then
     label_list := Split(labels, ":");
@@ -40,7 +44,7 @@ procedure() // forcing magma to read the full input before forking
 failed := [];
 for l in label_list do
     try
-        FillGenus(l : timeout := timeout, masslimit := masslimit, sizelimit := sizelimit, timelimit := timelimit, adjlimit := adjlimit);
+        FillGenus(l : timeout := timeout, masslimit := masslimit, sizelimit := sizelimit, timelimit := timelimit, adjlimit := adjlimit, perlattice := perlattice);
     catch e
         printf "ERROR: %o: %o\n", l, e;
         Append(~failed, l);
