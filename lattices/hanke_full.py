@@ -391,8 +391,6 @@ def fnd(L):
 
 def finish(L):
     evenL = even_sublattice(L)
-
-    print(evenL)
     if L==evenL:
         return L
     assert (L / evenL).cardinality() == 2
@@ -400,7 +398,6 @@ def finish(L):
     if v == -1:
         return evenL
     else:
-        print("lol")
         return p_neighbor_lattice(L,v)
 
 # ------------------------
@@ -453,47 +450,78 @@ def maximal_overlattice_2(L_in, do_asserts=True):
     if 2 not in ps:
         ps.append(2)
 
-    to_adjoin = []
-
+    # Adjoin one prime at a time, recomputing the Gram in between, rather than pooling
+    # every prime's vectors into a single overlattice() call.  The F_p model below only
+    # constrains pairs coming from the SAME p: it certifies b(v,w) integral for v,w in
+    # one prime's isotropic subspace, but says nothing about b(v_2, v_5).  Those lifts
+    # v*M^{-1} are arbitrary elements of L*, not of the p-primary component D_p, so the
+    # usual "D_2 and D_5 are orthogonal" argument does not apply to them and mixing the
+    # primes produced a non-integral Gram (every multi-prime genus tested failed:
+    # D = (10,10) always, D = (2,2) never).  Handling each prime against the current
+    # lattice is also correct because adjoining p-power-index classes leaves the other
+    # primes' discriminant parts untouched.
     for p in ps:
-        # quadratic form on the p-primary discriminant: use Gram p*M^{-1} mod p
+        M = L_sat.gram_matrix()
+        Minv = M.inverse()
+        # exponent of the discriminant group, for the p-primary projection below
+        m_exp = Integer(1)
+        for d in L_sat.discriminant_group().invariants():
+            m_exp = m_exp.lcm(Integer(d))
+        to_adjoin = []
+        # Model the p-primary discriminant form on F_p^n by the Gram p*M^{-1} mod p:
+        # writing x = v*M^{-1} in L*, we have p*q(x) = v*(p*M^{-1})*v^t, so v is
+        # isotropic for this form exactly when q(x) is integral, and likewise
+        # b(v,w) = 0 exactly when the inner product of the lifts is integral.  The
+        # radical corresponds to vectors already in L.
         Mp_dual = _matrix_Q_to_Fp(p*Minv, p)
 
-        if p == 2:
-            iso_basis = char2_max_isotrop(Mp_dual)
-            # char2_max_isotrop may return a list of vectors (ambient rows)
-            if hasattr(iso_basis, 'basis'):
-                iso_list = iso_basis.basis()
-            else:
-                iso_list = iso_basis
-            Fp = GF(p)
-            for v in iso_list:
-                vZ = vector(ZZ, [int(Fp(x)) for x in v])   # 0/1 reps
-                v_dual = vector(QQ, vZ) * Minv            # in L*
-                q = (v_dual * M * v_dual.column())[0]
-                if q in ZZ:
-                    to_adjoin.append(v_dual*L_sat.basis_matrix())
-        else:
-            iso_basis = max_isotrop_fp(Mp_dual, verbose=False)  # list of row vectors over F_p
-            Fp = GF(p)
-            for v in iso_basis:
-                vZ = vector(ZZ, [int(Fp(x)) for x in v])  # 0..p-1 reps
-                v_dual = vector(QQ, vZ) * Minv            # in L*
-                q = (v_dual * M * v_dual.column())[0]
-                if q in ZZ:
-                    to_adjoin.append(v_dual*L_sat.basis_matrix())
+        # max_isotrop_fp returns a *totally* isotropic subspace: its radical part is
+        # isotropic (b(r,.) = 0 forces b(r,r) = 0), each plane vector is isotropic, and
+        # each successive plane is split off inside the previous ones' orthogonal
+        # complement -- so the returned vectors are pairwise orthogonal.  This is what
+        # makes the adjoined overlattice integral, and it holds in every characteristic,
+        # including 2 (where b(v,v) = v*M*v^t = q(v) since the cross terms 2*M_ij*v_i*v_j
+        # vanish, so a b-isotropic subspace is automatically q-isotropic).
+        #
+        # It replaces char2_max_isotrop for p = 2, which collected every row of zero
+        # SELF-pairing without ever checking b(v,w) for v != w.  Those vectors are
+        # individually isotropic but do not span an isotropic subspace, so adjoining them
+        # produced a non-integral Gram (a concrete rank-8 det-100 genus gave b(v,w) =
+        # -3/2) and overlattice() rejected it.  Note also that no per-vector "q integral"
+        # filter belongs here: integrality is a property of the whole subgroup, and
+        # filtering a subspace vector-by-vector is exactly what destroys it.
+        iso_list = max_isotrop_fp(Mp_dual, verbose=False)  # list of row vectors over F_p
 
-    if to_adjoin:
-        L_sat = L_sat.overlattice(list(L_sat.basis()) + to_adjoin)
-        M = L_sat.gram_matrix()
+        # Project each lift into the p-primary component D_p before adjoining it.
+        # p*M^{-1} is p-integral, so reducing it mod p is p-ADIC reduction: the model
+        # certifies only that b(v,w) is p-integral, not that it is integral.  A raw lift
+        # v*M^{-1} is an arbitrary element of L*, so at det = 2^2*5^2 two vectors from the
+        # p=2 model can pair to k/5 -- 2-integral, isotropic in the F_2 model, and not
+        # integral (39 of 105 pairs failed this way on a rank-8 det-100 genus).  Scaling
+        # by the prime-to-p part of the discriminant group's exponent lands the class in
+        # D_p, where the only denominators are powers of p, so p-integral now means
+        # integral and the model's guarantee is the one we need.  The cofactor is a unit
+        # on D_p, so this reparametrises the isotropic subgroup rather than shrinking it.
+        Fp = GF(p)
+        cofactor = m_exp // (p**m_exp.valuation(p))
+        for v in iso_list:
+            vZ = vector(ZZ, [int(Fp(x)) for x in v])  # 0..p-1 reps
+            v_dual = cofactor * (vector(QQ, vZ) * Minv)   # in L*, now p-primary
+            to_adjoin.append(v_dual*L_sat.basis_matrix())
+
+        if to_adjoin:
+            L_sat = L_sat.overlattice(list(L_sat.basis()) + to_adjoin)
 
     L_sat = finish(L_sat)
     if do_asserts:
-        L_sat_max = L_sat.maximal_overlattice()
-        print(L_sat_max, "actual max")
-        print(L_sat_max.gram_matrix())
-        #assert L_sat == L_sat_max
-        #assert is_overlattice(L_sat, ogL)
+        # Assert what actually holds.  The result is an integral overlattice of the input,
+        # but it is NOT yet always *maximal*: the F_p model above sees only the
+        # p-elementary part of the discriminant group, so a p-part with higher torsion
+        # (Z/p^2 and up) contributes isotropic classes it cannot reach.  Measured against
+        # Sage's maximal_overlattice at det 100: agreement 3/3 at ranks 8 and 16, but 0/3
+        # at ranks 12 and 20.  Asserting maximality here would therefore fire on correct-
+        # as-far-as-it-goes output; that gap is the remaining work.
+        assert is_overlattice(L_sat, ogL), "result is not an overlattice of the input"
 
     return L_sat
 
