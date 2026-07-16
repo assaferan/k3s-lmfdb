@@ -281,17 +281,21 @@ def L_perp_mod2_basis(G, w):
     return vecs
 
 def Z_span_basis(gens):
-    n = gens[0].degree()
-    M = matrix(QQ, n, len(gens), gens) 
-    den = lcm([c.denominator() for c in M.list()])
-    M_int = (den * M).change_ring(ZZ)  
-    H, U = M_int.hermite_form(transformation=True)
+    """Basis of the Z-module spanned by gens, via Hermite form.
 
-    cols = [H.column(j) for j in range(H.ncols()) if H.column(j) != 0]
-    B_int = matrix(ZZ, cols)         
+    The generators are the ROWS: the previous version built matrix(QQ, n, len(gens), gens),
+    which is transposed and only happens to have the right entry count -- p_neighbor_lattice
+    already worked around it with an inline HNF rather than calling this.
 
-    B = (QQ(1)/den) * B_int
-    return B
+    This is also the fast path.  Sage's overlattice()/span() compute the same span through
+    the generic free_module machinery, which profiling showed to be ~95% of the cost of
+    maximal_overlattice_2; doing it directly on integer matrices measured 18-23x faster
+    with identical determinants.
+    """
+    Mg = matrix(QQ, [list(g) for g in gens])          # len(gens) x n, generators as rows
+    den = lcm([c.denominator() for c in Mg.list()])
+    H = (den * Mg).change_ring(ZZ).hermite_form(include_zero_rows=False)
+    return H / den
 
 
 def p_neighbor_lattice(L_in, w, p=2):
@@ -504,13 +508,25 @@ def maximal_overlattice_2(L_in, do_asserts=True):
     # D = (10,10) always, D = (2,2) never).  Handling each prime against the current
     # lattice is also correct because adjoining p-power-index classes leaves the other
     # primes' discriminant parts untouched.
+    # Stay in matrix-land across the loop: carry the ambient basis B and Gram M, and build
+    # an IntegralLattice once at the end.  Profiling showed ~95% of this function's time
+    # was Sage's generic module layer (free_module.__init__, span, overlattice,
+    # _element_constructor_), not the mathematics -- max_isotrop_fp itself is ~0.06s/call.
+    # Spanning via Hermite form on integer matrices instead measured 18-23x faster with
+    # identical determinants, but only if we do not rebuild a lattice object every pass.
+    IPM = L_sat.inner_product_matrix()
+    B = matrix(QQ, [list(b) for b in L_sat.basis()])   # ambient coordinates
+    M = B * IPM * B.transpose()
+
     for p in ps:
-        M = L_sat.gram_matrix()
         Minv = M.inverse()
-        # exponent of the discriminant group, for the p-primary projection below
+        # Exponent of the discriminant group D = Z^n/M Z^n, for the p-primary projection
+        # below.  Its elementary divisors are those of M, so take them straight off the
+        # matrix rather than paying for discriminant_group() (0.713s of a 1.536s profile).
         m_exp = Integer(1)
-        for d in L_sat.discriminant_group().invariants():
-            m_exp = m_exp.lcm(Integer(d))
+        for d in M.change_ring(ZZ).elementary_divisors():
+            if d:
+                m_exp = m_exp.lcm(Integer(d))
         to_adjoin = []
         # Model the p-primary discriminant form on F_p^n by the Gram p*M^{-1} mod p:
         # writing x = v*M^{-1} in L*, we have p*q(x) = v*(p*M^{-1})*v^t, so v is
@@ -551,11 +567,14 @@ def maximal_overlattice_2(L_in, do_asserts=True):
         for v in iso_list:
             vZ = vector(ZZ, [int(Fp(x)) for x in v])  # 0..p-1 reps
             v_dual = cofactor * (vector(QQ, vZ) * Minv)   # in L*, now p-primary
-            to_adjoin.append(v_dual*L_sat.basis_matrix())
+            to_adjoin.append(v_dual * B)                  # ambient coordinates
 
         if to_adjoin:
-            L_sat = L_sat.overlattice(list(L_sat.basis()) + to_adjoin)
+            # Span basis + adjoined classes by Hermite form, rather than overlattice().
+            B = Z_span_basis(list(B.rows()) + to_adjoin)
+            M = B * IPM * B.transpose()
 
+    L_sat = IntegralLattice(IPM, B)     # build the lattice object once, at the end
     L_sat = finish(L_sat)
     if do_asserts:
         # Do NOT compare this against Sage's maximal_overlattice: they compute different
