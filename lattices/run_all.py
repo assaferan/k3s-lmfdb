@@ -31,12 +31,13 @@ parser.add_argument("-k", "--nokthree", action="store_true", help="By default, w
 
 # Parallelization
 parser.add_argument("-j", "--jobs", type=int, default=128, help="Number of parallel processes to use")
-parser.add_argument("-b", "--batch-mass", type=int, default=128, help="Batch genus enumeration instances together until the total mass exceeds this amount")
-parser.add_argument("--batch-size", type=int, default=32, help="Also flush a genus-enumeration batch once it holds this many genera, regardless of mass.  Mass is a poor proxy for work at high rank: high-rank genera have huge automorphism groups, so their mass is tiny (~1e-6) and hundreds of expensive genera would otherwise pack into a single mass-bounded batch, making it run for tens of minutes (and degrade further as memory accumulates).  Keeping batches small also bounds per-batch memory bloat and improves parallelism.")
+parser.add_argument("-b", "--batch-mass", type=int, default=128, help="DEPRECATED, ignored.  Batches are now sized by estimated wall-clock work (--batch-work-target), not mass.  Mass is a terrible proxy for cost: high-rank genera have huge automorphism groups, so their mass is ~1e-6, and hundreds of expensive genera packed into one mass-bounded batch that then ran for tens of minutes.  Kept only so existing invocations don't error.")
+parser.add_argument("--batch-work-target", type=float, default=120.0, help="Batch genus-enumeration instances together until their estimated fill cost reaches this many seconds, so every batch is ~equal wall-clock regardless of rank/signature mix.  Costs are a per-genus calibration (definite rank>=9 genera each cost ~enum-timelimit; rank<=8 and all indefinite genera are cheap).  This is the primary batching control.")
+parser.add_argument("--batch-size", type=int, default=32, help="Backstop cap on genera per batch, regardless of work target.  Mainly bounds the per-job command-line length (one label each); for cheap genera the work target rarely fills a batch, so this keeps those batches from growing unwieldy.")
 
 # Don't store too many lattices
 parser.add_argument("--enum-masslimit", type=int, default=1000, help="If the mass of a genus is larger than this threshold, don't even try to enumerate lattices within")
-parser.add_argument("--enum-timelimit", type=int, default=300, help="Maximum number of seconds to spend on enumerating a genus") # TODO: calibrate this based on how much time we want to spend
+parser.add_argument("--enum-timelimit", type=int, default=60, help="Maximum wall-clock seconds to spend in the per-lattice loop of a genus; past it the genus keeps its genus-level record (class number, adjacency) but stores per-lattice data only for the lattices reached so far.  Calibrated at C=256 rank 1-12: dropping 300->60 cut the slow-batch tail ~3x (worst batch 831s->264s) with zero failures, since the per-lattice ThetaSeries loop is the dominant high-rank cost and its per-lattice data is the least critical to retain.")
 parser.add_argument("--enum-sizelimit", type=int, default=1000, help="For genera with class number larger than this, do not store individual lattices within the genus")
 parser.add_argument("--enum-adjlimit", type=int, default=20000, help="Work budget for the adjacency (Hecke) matrix: skip it when the estimated work (~class_number * sum_p p^(rank-2) over the Hecke primes p) exceeds this.  The p-neighbour cost grows as p^(rank-2), so this adaptively cuts off high rank and/or high class number.  Default is high enough to compute it through ~rank 12 at small determinant (where it is cheap) and only guard genuinely extreme cases; lower it if adjacency becomes a bottleneck at large determinant.")
 
@@ -87,18 +88,27 @@ def build_genus_inputs():
         inputs.extend(inputs_sig)
     return inputs
 
+# Calibrated per-genus fill cost in seconds (from a C=256 rank-vs-wall-clock calibration).
+# Definite genera dominate, and their cost cliffs at rank 9 where the per-lattice loop
+# saturates enum_timelimit; indefinite genera (SpinorRepresentatives, small class number)
+# are uniformly cheap (~0.5s) at every rank.  We batch by summing this cost to a target so
+# every batch is roughly equal wall-clock.
+_DEF_COST = {1: 1.1, 2: 1.7, 3: 2.2, 4: 2.4, 5: 2.9, 6: 4.1, 7: 3.8, 8: 11.0}
+def genus_work(r, definite):
+    if not definite:
+        return 0.5
+    if r in _DEF_COST:
+        return _DEF_COST[r]
+    # Definite rank >= 9: the per-lattice loop saturates enum_timelimit, so the cost is
+    # ~timelimit plus a few seconds of representatives/adjacency.  This tracks
+    # --enum-timelimit and extrapolates to the higher ranks of the target run, which
+    # saturate the cap the same way.
+    return args.enum_timelimit + 5.0
+
 def build_enumeration_inputs(fname):
-    m = 0
-    M = args.batch_mass
+    W = 0.0
+    T = args.batch_work_target
     labels = []
-    with open("genera_basic.format") as F:
-        basic = F.read().strip().split("|")
-        massi = basic.index("mass")
-    def get_mass(path):
-        with open(path) as F:
-            pieces = F.read().strip().split("|")
-            num, den = pieces[massi].strip("{}").split(",")
-            return float(num) / float(den)
     total = 0
     with open(fname, "w") as Fout:
         for sig in signatures():
@@ -107,18 +117,16 @@ def build_enumeration_inputs(fname):
             base = Path("genera_basic", str(r), str(nplus))
             if not base.is_dir():
                 continue            # no genera enumerated for this signature
+            definite = (r == nplus)
             for genus in base.iterdir():
-                if r == nplus:
-                    m += get_mass(genus)   # genus is already the full path from iterdir()
-                else:
-                    m += 1 # pretend indefinite genera have mass 1
+                W += genus_work(r, definite)
                 labels.append(genus.name)
-                if m > M or len(labels) >= args.batch_size:
+                if W >= T or len(labels) >= args.batch_size:
                     _ = Fout.write(":".join(labels) + "\n")
-                    m = 0
+                    W = 0.0
                     labels = []
                     total += 1
-        if m > 0 :
+        if labels:
             _ = Fout.write(":".join(labels) + "\n")
             total += 1
     return total
