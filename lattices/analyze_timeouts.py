@@ -95,7 +95,8 @@ def genus_fill(basic_fmt, adv_fmt, data_dir):
 
 
 def joblogs():
-    for name in ["fill", "tensor", "names", "connect"]:
+    # "connect" is the old single-pass log; the two-pass connect writes connect1/connect2.
+    for name in ["fill", "tensor", "names", "connect", "connect1", "connect2"]:
         f = Path(f"{name}.joblog")
         if not f.exists():
             continue
