@@ -43,6 +43,7 @@ parser.add_argument("--enum-timelimit", type=int, default=900, help="Maximum wal
 parser.add_argument("--enum-sizelimit", type=int, default=1000, help="For genera with class number larger than this, do not store individual lattices within the genus")
 parser.add_argument("--enum-adjlimit", type=int, default=0, help="Work budget for the adjacency (Hecke) matrix: skip it when the estimated work (~class_number * sum_p p^(rank-2) over the Hecke primes p) exceeds this; 0 = no budget, always attempt it.  Defaults to 0 because the estimate mis-prices reality badly -- at rank 7 the sum_p p^5 term crosses a 20000 budget at class number 6, yet a whole rank-7 genus fills in ~4s, so a budget of 20000 silently dropped Hecke data for 65 rank-7 genera (4.4%% of definite genera overall) that were never expensive.  AdjacencyMatrix now runs under a hard-killed TimeoutCall, which bounds it by measured time instead of a bad model; prefer that.  Set this only if you specifically want to skip adjacency without even trying.")
 parser.add_argument("--no-orth", action="store_true", help="Disable the orbit-method genus enumeration (use the p-neighbour walk only)")
+parser.add_argument("--warm-limit", type=int, default=300, help="Wall-clock budget (seconds) for each fill job's batch cache pre-warm.  The pre-warm runs in the parent Magma process (so forked per-genus enumerations inherit the warmed cache) and therefore cannot be bounded by TimeoutCall; past this budget it aborts at a safe point and the job continues with a partial cache plus the on-disk tier.")
 
 # Skip stages
 parser.add_argument("--skip-list-genera", action="store_true", help="Assume that genera have already been listed")
@@ -112,7 +113,7 @@ def genus_work(r, definite):
     # run.  Recalibrate against the actual census before trusting them there.
     return float(args.enum_timelimit)
 
-def build_enumeration_inputs(fname):
+def build_enumeration_inputs(fname, rank=None):
     W = 0.0
     T = args.batch_work_target
     labels = []
@@ -120,6 +121,8 @@ def build_enumeration_inputs(fname):
     with open(fname, "w") as Fout:
         for sig in signatures():
             r = sum(sig)
+            if rank is not None and r != rank:
+                continue
             nplus = sig[0]
             base = Path("genera_basic", str(r), str(nplus))
             if not base.is_dir():
@@ -174,7 +177,8 @@ def clean_outputs():
     is -- it previously made an audit blame connect for a gap that fill had created.
     """
     targets = ["genera_advanced", "genera_hash", "lattice_basic_data",
-               "lattice_advanced_data", "lattice_hashes", "voronoi", "shortest"]
+               "lattice_advanced_data", "lattice_hashes", "voronoi", "shortest",
+               "orth_cache"]   # stale cached genera would leak old counters/labels into provenance
     if not args.skip_list_genera:
         targets.append("genera_basic")   # regenerated below; otherwise it is this run's input
     removed = []
@@ -214,19 +218,35 @@ def main():
 
         print(f"\nDone listing genera! ({time.monotonic() - start_time:.1f}s)")
 
-    gcount = build_enumeration_inputs("genus_jobs.txt")
+    gcount = build_enumeration_inputs("genus_jobs.txt")   # full list, used by the connect stages
     if not args.skip_enumerate_genera:
-        with timed(f"Enumerating genera ({gcount} batches)"):
-            # Pass the enumeration guards through to FillGenus so a few pathological
-            # high-rank genera can't dominate wall-clock (they otherwise run for hours):
-            # skip enumerating past enum-masslimit, store genus-level data only past
-            # enum-sizelimit, and cap per-genus wall-clock at enum-timelimit.
-            parallel("genus_jobs.txt", "fill.joblog",
-                     [f"timeout:={args.enum_timeout}", f"masslimit:={args.enum_masslimit}",
-                      f"sizelimit:={args.enum_sizelimit}", f"timelimit:={args.enum_timelimit}",
-                      f"adjlimit:={args.enum_adjlimit}",
-                      f"useorth:={0 if args.no_orth else 1}",
-                      "labels:={1}", "run_fill_genus.m"])
+        # Work DOWNWARD by rank, with a barrier between ranks.  The orbit method
+        # enumerates a definite genus by descending from a parent genus of rank+1
+        # and smaller determinant, and FillGenus persists every finished definite
+        # genus (with its label and per-lattice counters) to the on-disk orth
+        # cache (orth_cache/).  Since a parent's determinant is at most half the
+        # child's, every parent of a rank-r genus lies inside the rank-(r+1) box,
+        # so completing rank r+1 first turns parent lookups into disk hits:
+        # one-step descents against already-filled genera (which also makes the
+        # ambient_genus / ambient_lattice provenance resolvable) instead of cold
+        # recursive chains.  Within a rank, batches run in parallel as before;
+        # only the ranks are sequenced.
+        for r in sorted(set(ranks()), reverse=True):
+            rcount = build_enumeration_inputs(f"genus_jobs_{r}.txt", rank=r)
+            if rcount == 0:
+                continue
+            with timed(f"Enumerating genera of rank {r} ({rcount} batches)"):
+                # Pass the enumeration guards through to FillGenus so a few pathological
+                # genera can't dominate wall-clock: skip enumerating past enum-masslimit,
+                # store genus-level data only past enum-sizelimit, and cap per-genus
+                # wall-clock at enum-timelimit.
+                parallel(f"genus_jobs_{r}.txt", f"fill_{r}.joblog",
+                         [f"timeout:={args.enum_timeout}", f"masslimit:={args.enum_masslimit}",
+                          f"sizelimit:={args.enum_sizelimit}", f"timelimit:={args.enum_timelimit}",
+                          f"adjlimit:={args.enum_adjlimit}",
+                          f"useorth:={0 if args.no_orth else 1}",
+                          f"warmlimit:={args.warm_limit}",
+                          "labels:={1}", "run_fill_genus.m"])
 
     if not args.skip_embeddings:
         print("Finding lattice embeddings (TODO: Oscar embedding code)")

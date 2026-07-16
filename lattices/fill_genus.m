@@ -112,7 +112,7 @@ function SphereVolume(n)
     end if;
 end function;
 
-intrinsic FillGenus(label::MonStgElt : timeout := 1800, masslimit := 0, sizelimit := 0, timelimit := 0, adjlimit := 0, use_orth := true)
+intrinsic FillGenus(label::MonStgElt : timeout := 1800, masslimit := 0, sizelimit := 0, timelimit := 0, adjlimit := 0, use_orth := true, force_orth := false)
 {Fill the data for a genus and its lattice representatives, given files in the genera_basic format.
 
 Enumeration guards (0 = unlimited): masslimit skips enumerating a definite genus whose
@@ -170,13 +170,17 @@ enumeration for definite genera of rank >= 3 (see GenusReps in genus_reps.m).}
         // (genus_reps.m); use_orth toggles the orbit method for definite rank >= 3,
         // refined by the rank/mass heuristic (the neighbour walk stays the default
         // for small class numbers at low rank, where it wins).
-        genus_success, reps := GenusReps(L0 : Timeout := timeout,
-            UseOrth := use_orth and UseOrthHeuristic(n, genus_mass));
+        genus_success, reps, orth_prov := GenusReps(L0 : Timeout := timeout,
+            UseOrth := use_orth and (force_orth or UseOrthHeuristic(n, genus_mass)));
     end if;
     advanced["class_number"] := "\\N";
     advanced["adjacency_matrix"] := "\\N";
     advanced["adjacency_polynomials"] := "\\N";
-    advanced["ambient_lattice"] := "\\N";   // TODO: compute the ambient lattice
+    // ambient_genus: the genus of the parent lattices from which this genus's
+    // classes were obtained as orthogonal complements (orbit-method provenance);
+    // the per-lattice counter/vector references live in lat_lattices.
+    if not assigned orth_prov then orth_prov := 0; end if;
+    advanced["ambient_genus"] := (orth_prov cmpeq 0 or orth_prov[1] eq "") select "\\N" else orth_prov[1];
     have_adjacency := false;   // set below iff the adjacency (Hecke) matrix is computed
     if genus_success then
         vprintf FillGenus, 1 : "Number of genus representatives: %o\n", #reps;
@@ -281,7 +285,18 @@ enumeration for definite genera of rank >= 3 (see GenusReps in genus_reps.m).}
         lat["aut_label"] := "\\N";
         lat["aut_group"] := "\\N";
         lat["is_chiral"] := "\\N";
+        // Orbit-method provenance: this lattice is the orthogonal complement of
+        // orthogonal_complement (a vector) inside the lattice with counter
+        // ambient_lattice in the genus ambient_genus (see genera_advanced).  The
+        // vector lives in the first lattice up the parent chain for which a Gram
+        // matrix is available; \N when the class came from a p-neighbour walk or
+        // the parent genus has no recorded label/counters.
+        lat["ambient_lattice"] := "\\N";
         lat["orthogonal_complement"] := "\\N";
+        if orth_prov cmpne 0 and orth_prov[1] ne "" and Li le #orth_prov[2] and orth_prov[2][Li][1] gt 0 then
+            lat["ambient_lattice"] := orth_prov[2][Li][1];
+            lat["orthogonal_complement"] := orth_prov[2][Li][2];
+        end if;
         lat["density"] := "\\N";
         lat["hermite"] := "\\N";
         lat["kissing"] := "\\N";
@@ -485,9 +500,17 @@ enumeration for definite genera of rank >= 3 (see GenusReps in genus_reps.m).}
 
     SetColumns(0);
     for idx->L in lats do
-        // Need label for lattice.
+        // Need label for lattice.  counter records this sort position explicitly, so
+        // cross-genus references (ambient_lattice in child genera) can point at it.
         lats[idx]["label"] := Sprintf("%o.%o", basics["label"], idx);
+        lats[idx]["counter"] := idx;
     end for;
+    // Persist the finished genus (reps in counter order) to the on-disk orth cache:
+    // in rank-descending orchestration the genera of the next-lower rank descend
+    // from these lattices and resolve their ambient_lattice counters against them.
+    if (n eq s) and (#lats gt 0) then
+        WriteGenusOrthCache(basics["label"], [lat["lattice"] : lat in lats]);
+    end if;
 
     if #lats gt 0 then
         SetHashes(~lats, ~advanced, theta_elapsed, timeout);
@@ -505,8 +528,6 @@ enumeration for definite genera of rank >= 3 (see GenusReps in genus_reps.m).}
     // genus being processed.  So we write the hash function used to a separate file
     // so that it can be looked up when needed (see lookup_hash_function in connect_genus.m)
     Write(LabelPath("genera_hash", n, s, IntegerToString(advanced["genus_hash"]) : Create), advanced["hash_function"] : Overwrite);
-
-    // TODO: Compute ambient_lattice
 
     for idx->L in lats do
         lat := L;

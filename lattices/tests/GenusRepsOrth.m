@@ -63,6 +63,28 @@ for i in [1 .. #B] do
     assert &+[ 1/#AutomorphismGroup(R) : R in batch[i] ] eq Mass(B[i]);
 end for;
 
+// Indefinite dispatch enumerates EVERY spinor genus in the genus (audit P1):
+// diag(1,20,-25) has two spinor genera, hence two classes by Eichler;
+// SpinorRepresentatives alone used to return only one of them.
+Lind := LatticeWithGram(DiagonalMatrix(Rationals(), [1, 20, -25]) : CheckPositive := false);
+ok, reps := GenusReps(Lind : Timeout := 120);
+assert ok and #reps eq 2;
+
+// Negative definite lattices are enumerated via negation, not the indefinite
+// shortcut (audit P1).
+Lneg := LatticeWithGram(DiagonalMatrix(Rationals(), [-1, -1, -8]) : CheckPositive := false);
+ok, nreps := GenusReps(Lneg : Timeout := 120);
+posreps := GenusRepresentativesOrth(LatticeWithGram(DiagonalMatrix(Integers(), [1, 1, 8])));
+assert ok and #nreps eq #posreps;
+assert forall{ R : R in nreps | IsPositiveDefinite(-GramMatrix(R)) };
+
+// Batch with Depth := 0 must not perform any glue step (audit: it used one more
+// level than allowed); the single-target fallback still gives correct answers.
+batch0 := GenusRepresentativesOrthBatch(B : Depth := 0);
+for i in [1 .. #B] do
+    assert #batch0[i] eq #batch[i];
+end for;
+
 // Mass-aware routing: the neighbour walk keeps small low-rank genera, the
 // orbit method takes high rank or large mass.
 assert not UseOrthHeuristic(14, 1/2);

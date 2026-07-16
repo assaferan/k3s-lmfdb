@@ -19,7 +19,7 @@
 // method is an accelerator, not a source of truth.
 
 declare verbose GenusReps, 2;
-declare attributes RngInt : GenusOrthCache;
+declare attributes RngInt : GenusOrthCache, GenusOrthDeadline;
 
 import "neighbours.mag" : neighbours_old;
 import "neighbours_canonical.mag" : list_genus;
@@ -59,13 +59,37 @@ function genus_reps_Faster(L)
 end function;
 
 function genus_reps_Spinor(L)
-    // Indefinite lattices of rank >= 3: by Eichler each proper spinor genus is a single
-    // class, so the spinor-genus representatives ARE the genus representatives.  This is
-    // a fallback for when Magma's GenusRepresentatives fails (e.g. signature (2,2) rank 4
-    // -- "Illegal null sequence" in its number-field-lattice code); SpinorRepresentatives
-    // uses a different path and succeeds where GenusRepresentatives does not.
-    reps := SpinorRepresentatives(L);
-    return reps;
+    // Indefinite lattices of rank >= 3: by Eichler each (proper) spinor genus consists
+    // of a single isometry class -- but a genus may contain SEVERAL spinor genera, so
+    // all of them must be enumerated.  SpinorRepresentatives(L) alone returns only the
+    // class of L's own spinor genus and under-enumerates, e.g. diag(1,20,-25), whose
+    // genus has two spinor genera hence two classes.  This route also avoids Magma's
+    // GenusRepresentatives, which fails on some indefinite genera (e.g. signature (2,2)
+    // rank 4 -- "Illegal null sequence" / "cs must be non-empty" in its LatNF code).
+    return [Representative(S) : S in SpinorGenera(Genus(L))];
+end function;
+
+forward genus_reps_orth;
+
+function genus_reps_negdef(L, use_orth)
+    // Negative definite lattices: negate to positive definite, enumerate the full
+    // genus there, and negate back.  (The indefinite spinor shortcut does NOT apply
+    // to definite lattices, and the definite machinery requires positive gram.)
+    Lp := LatticeWithGram(-GramMatrix(L));
+    if Rank(Lp) ge 3 then
+        reps := use_orth select genus_reps_orth(Lp) else genus_reps_Faster(Lp);
+    else
+        reps := genus_reps_Magma(Lp);
+    end if;
+    return [LatticeWithGram(-GramMatrix(R) : CheckPositive := false) : R in reps];
+end function;
+
+function genus_reps_negdef_orth(L)
+    return genus_reps_negdef(L, true);
+end function;
+
+function genus_reps_negdef_walk(L)
+    return genus_reps_negdef(L, false);
 end function;
 
 // Exact GL2(Z)-isometry test for the canonical rank-2 forms [[0,m],[m,k1]] and
@@ -123,6 +147,17 @@ end function;
  * The orbit method
  ****************************************************************************/
 
+// Wall-clock budget for orth work (see SetGenusOrthTimeBudget): raise a
+// CATCHABLE error once the deadline passes.  Used by the batch pre-warm, which
+// cannot run under TimeoutCall (the fork would take the warmed cache with it)
+// and cannot rely on Alarm (uncatchable, and not delivered inside C builtins).
+procedure check_orth_deadline()
+    ZZ := Integers();
+    if assigned ZZ`GenusOrthDeadline and Realtime() gt ZZ`GenusOrthDeadline then
+        error "orth: time budget exceeded";
+    end if;
+end procedure;
+
 // Canonical representative of {v, -v}: make the first nonzero entry positive.
 function normsign(v)
     for c in Eltseq(v) do
@@ -153,9 +188,16 @@ function glue_candidates(L)
         m := (-r) mod o;
         if m eq 0 then continue; end if; // isotropic: no rank+1 determinant drop
         detP := (D * m) div o;           // o | D since o | #(L^#/L)
-        Append(~cands, <detP, o/m, o, m, xl>);
+        // The parent's parity is known without constructing it: the glue vector has
+        // norm Norm(xl) + m/o (an integer), and P is even iff L is even and that
+        // norm is even.  Even parents sort first (their neighbour base cases are
+        // uniformly fast), so glue_scored's construction window sees them even when
+        // many odd candidates precede them in determinant order.
+        oddP := (IsEven(L) and IsEven(Z ! (Norm(xl) + m/o))) select 0 else 1;
+        Append(~cands, <detP, o/m, o, m, xl, oddP>);
     end for;
     cmp := function(a, b)
+        if a[6] ne b[6] then return a[6] lt b[6] select -1 else 1; end if;
         if a[1] ne b[1] then return a[1] lt b[1] select -1 else 1; end if;
         if a[2] ne b[2] then return a[2] lt b[2] select -1 else 1; end if;
         return 0;
@@ -204,6 +246,7 @@ function typed_vector_orbits(P, o, m, max_vecs)
     while true do
         u := NextVector(proc);
         if IsZero(u) then break; end if;
+        if #S mod 4096 eq 0 then check_orth_deadline(); end if;
         if #S ge max_vecs then
             vprintf GenusReps, 1 : "orth: more than %o type vectors, giving up on this descent\n", max_vecs;
             return false, _;
@@ -271,13 +314,112 @@ function cache_bucket_key(L)
     return Sprint(<Rank(L), Determinant(L), IsEven(L), [Coefficient(th, i) : i in [0 .. 4]]>);
 end function;
 
+intrinsic SetGenusOrthTimeBudget(seconds::RngIntElt)
+{Abort orth enumeration work (with a catchable error) once this many seconds of
+wall clock have elapsed.  Used to bound the batch cache pre-warm, which must run
+in the parent process.  Clear with ClearGenusOrthTimeBudget.}
+    ZZ := Integers();
+    ZZ`GenusOrthDeadline := Realtime() + seconds;
+end intrinsic;
+
+intrinsic ClearGenusOrthTimeBudget()
+{Remove the wall-clock budget set by SetGenusOrthTimeBudget.}
+    ZZ := Integers();
+    if assigned ZZ`GenusOrthDeadline then
+        delete ZZ`GenusOrthDeadline;
+    end if;
+end intrinsic;
+
+// Cache entries are <query lattice, aut_graph, reps, label, counters, prov>:
+// label is the genus's pipeline label ("" when unknown), counters[i] the
+// database counter of reps[i] within the genus (label sort order; [] when
+// unknown), and prov the provenance <ambient genus label, [<ambient counter,
+// vector>]> recorded when the genus was produced by a descent (0 when unknown).
+// Label and counters are what make cross-genus references (ambient_lattice)
+// resolvable when a child genus descends from this one.
+
 forward cache_lookup;
+
+// The disk tier: FillGenus persists each definite genus it finishes (with its
+// label and counters) under orth_cache/, so parallel fill processes -- and, in
+// rank-descending orchestration, the children of this rank -- reuse hub genera
+// across process boundaries.  Files are named <bucket-hash>.<content-hash>; two
+// processes writing the same genus from different representatives produce two
+// files, which lookup deduplicates by isometry.  Writes go through a temp file
+// and mv, so concurrent writers are safe.
+function orth_cache_path(gkey, content)
+    // gkey must be GENUS-invariant (rank/det/parity): a class-dependent key (e.g.
+    // theta coefficients) would make lookups from a different class of the same
+    // genus miss the file entirely.
+    bh := IntegerToString(CollapseIntList(StringToBytes(gkey)));
+    ch := IntegerToString(CollapseIntList(StringToBytes(content)));
+    return "orth_cache/" * bh * "." * ch, bh;
+end function;
+
+function orth_cache_genus_key(L)
+    return Sprint(<Rank(L), Determinant(L), IsEven(L)>);
+end function;
+
+procedure orth_cache_write(L, reps, label, counters)
+    content := label * "\n" *
+        Join([ (#counters eq #reps select IntegerToString(counters[i]) else "0")
+               * "|" * Join([IntegerToString(Z ! c) : c in Eltseq(GramMatrix(reps[i]))], " ")
+             : i in [1 .. #reps]], "\n");
+    path, _ := orth_cache_path(orth_cache_genus_key(L), content);
+    System("mkdir -p orth_cache");
+    tmp := path * ".tmp" * IntegerToString(Getpid());
+    Write(tmp, content : Overwrite);
+    System("mv " * tmp * " " * path);
+end procedure;
+
+intrinsic WriteGenusOrthCache(label::MonStgElt, reps::SeqEnum)
+{Persist a finished genus (reps in counter order, i.e. label sort order) to the
+on-disk orth cache, so other processes can use it as a descent parent and
+resolve ambient_lattice counters against it.}
+    if #reps eq 0 then return; end if;
+    orth_cache_write(reps[1], reps, label, [1 .. #reps]);
+end intrinsic;
+
+// Try to load a genus isometric to L from the disk tier; returns success and
+// the parsed entry-shaped tuple.
+function orth_cache_disk_lookup(L)
+    _, bh := orth_cache_path(orth_cache_genus_key(L), "");
+    // "|| true": Pipe raises on nonzero exit, and ls fails when no genus has been
+    // persisted yet (the directory is only created on first write).
+    files := Split(Pipe("ls orth_cache 2>/dev/null || true", ""), "\n");
+    n := Rank(L);
+    GL := 0;   // Genus(L), computed lazily (only when a candidate file exists)
+    for f in files do
+        if #f lt #bh + 1 or f[1 .. #bh + 1] ne bh * "." or "tmp" in f then continue; end if;
+        lines := Split(Read("orth_cache/" * f), "\n");
+        label := lines[1];
+        reps := [];
+        counters := [];
+        okfile := true;
+        for i in [2 .. #lines] do
+            parts := Split(lines[i], "|");
+            ents := [StringToInteger(c) : c in Split(parts[2], " ")];
+            if #ents ne n^2 then okfile := false; break; end if;
+            Append(~counters, StringToInteger(parts[1]));
+            Append(~reps, LatticeWithGram(Matrix(Z, n, ents)));
+        end for;
+        if not okfile or #reps eq 0 then continue; end if;
+        // A cache file represents a GENUS, while L is one class of it (typically not
+        // the class stored first), so membership is decided by genus equality, not
+        // by isometry with the first representative.
+        if GL cmpeq 0 then GL := Genus(L); end if;
+        if Genus(reps[1]) eq GL then
+            return true, <reps[1], aut_graph(reps[1] : orth_bd := 6), reps, label, counters, 0>;
+        end if;
+    end for;
+    return false, <L, 0, [], "", [], 0>;
+end function;
 
 // Insert a complete list of genus representatives into the process-wide cache,
 // keyed by the query lattice and (for small genera) by every class rep, so a
 // later chain gluing into any class of this genus hits.  With guard, skips
 // insertion when the genus is already cached.
-procedure cache_insert(L, reps : guard := false)
+procedure cache_insert(L, reps : guard := false, label := "", counters := [], prov := 0)
     ZZ := Integers();
     if not assigned ZZ`GenusOrthCache then
         ZZ`GenusOrthCache := AssociativeArray();
@@ -288,7 +430,7 @@ procedure cache_insert(L, reps : guard := false)
         keyed cat:= [<cache_bucket_key(R), R> : R in reps | R ne L];
     end if;
     for kr in keyed do
-        entry := <kr[2], aut_graph(kr[2] : orth_bd := 6), reps>;
+        entry := <kr[2], aut_graph(kr[2] : orth_bd := 6), reps, label, counters, prov>;
         if IsDefined(ZZ`GenusOrthCache, kr[1]) then
             lst := (ZZ`GenusOrthCache)[kr[1]];
             Append(~lst, entry);
@@ -341,11 +483,16 @@ function orth_descend_multi(parents, o, m, targets, max_vecs)
     other_genera := [* *];
     other_lats := [* *];
     npairs := 0;
+    provs := [* *];
+    for i in [1 .. nt] do Append(~provs, []); end for;
+    pidx := 0;
     for P in parents do
+        pidx +:= 1;
+        check_orth_deadline();
         if forall{ i : i in [1 .. nt] | done[i] } then break; end if;
         ok, vreps := typed_vector_orbits(P, o, m, max_vecs);
         if not ok then
-            return false, [<found[i], targets[i][3] - tallies[i]> : i in [1 .. nt]], [* *];
+            return false, [<found[i], targets[i][3] - tallies[i], provs[i]> : i in [1 .. nt]], [* *];
         end if;
         for v in vreps do
             npairs +:= 1;
@@ -399,6 +546,7 @@ function orth_descend_multi(parents, o, m, targets, max_vecs)
                 buckets[ti] := tb;
             end if;
             if newlat then
+                pl := provs[ti]; Append(~pl, <pidx, Eltseq(v)>); provs[ti] := pl;
                 tallies[ti] +:= 1 / #AutomorphismGroupFaster(NL);
                 error if tallies[ti] gt targets[ti][3],
                     "orth: mass exceeded during descent (isometry-class deduplication failed?)";
@@ -436,36 +584,53 @@ function orth_descend_multi(parents, o, m, targets, max_vecs)
         tally := &+[ Rationals() | 1 / #AutomorphismGroupFaster(R) : R in reps ];
         Append(~others, <other_genera[i], reps, tally eq gmass>);
     end for;
-    return true, [<found[i], targets[i][3] - tallies[i]> : i in [1 .. nt]], others;
+    return true, [<found[i], targets[i][3] - tallies[i], provs[i]> : i in [1 .. nt]], others;
 end function;
 
-// Single-target wrapper (the recursion uses this).
-function orth_descend(parents, o, m, Ltarget, max_vecs)
+// Single-target wrapper (the recursion uses this).  Returns success, the
+// representatives, the missing mass, and the per-class provenance <parent
+// index, vector> list (parallel to the representatives).
+function orth_descend(parents, o, m, Ltarget, max_vecs, use_cache)
     ok, res, others := orth_descend_multi(parents, o, m,
         [<Ltarget, Genus(Ltarget), Mass(Ltarget)>], max_vecs);
     // Cache any complete free genera picked up along the way.
-    ZZ := Integers();
-    if ok and assigned ZZ`GenusOrthCache then
+    if ok and use_cache then
         for oth in others do
             if oth[3] and #oth[2] gt 0 then
                 cache_insert(oth[2][1], oth[2] : guard := true);
             end if;
         end for;
     end if;
-    return ok, res[1][1], res[1][2];
+    return ok, res[1][1], res[1][2], res[1][3];
 end function;
 
-// Process-wide cache lookup.  The cache maps a cheap invariant bucket to
-// <lattice, aut_graph, reps> entries; membership within a bucket is decided by
-// exact isometry (isom_graph), never by canonical forms (see orth_descend).
-function cache_lookup(L)
+// Process-wide cache lookup with disk fallback.  The in-memory cache maps a
+// cheap invariant bucket to entries (see above); membership within a bucket is
+// decided by exact isometry (isom_graph), never by canonical forms (see
+// orth_descend).  On a memory miss the disk tier is consulted and hits are
+// promoted, so genera filled by other processes are reused transparently.
+function cache_lookup_full(L)
     ZZ := Integers();
-    if not assigned ZZ`GenusOrthCache then return false, _; end if;
+    if not assigned ZZ`GenusOrthCache then
+        ZZ`GenusOrthCache := AssociativeArray();
+    end if;
     bkey := cache_bucket_key(L);
-    if not IsDefined(ZZ`GenusOrthCache, bkey) then return false, _; end if;
-    for ent in (ZZ`GenusOrthCache)[bkey] do
-        if isom_graph(ent[2], L) then return true, ent[3]; end if;
-    end for;
+    if IsDefined(ZZ`GenusOrthCache, bkey) then
+        for ent in (ZZ`GenusOrthCache)[bkey] do
+            if isom_graph(ent[2], L) then return true, ent; end if;
+        end for;
+    end if;
+    ok, ent := orth_cache_disk_lookup(L);
+    if ok then
+        cache_insert(ent[1], ent[3] : label := ent[4], counters := ent[5], prov := ent[6]);
+        return true, ent;
+    end if;
+    return false, ent;
+end function;
+
+function cache_lookup(L)
+    ok, ent := cache_lookup_full(L);
+    if ok then return true, ent[3]; end if;
     return false, _;
 end function;
 
@@ -496,7 +661,10 @@ function glue_scored(L, dual_norm_bound, rank_cap, use_cache)
         end if;
         Append(~scored, <incache select 0 else 1, IsEven(P) select 0 else 1,
                          c[1], c[2], c[3], c[4], P>);
-        if #scored ge 4 then break; end if;
+        // Construct a wider window than we keep: the static candidate order cannot
+        // see cached parents, so stopping at the first four constructible candidates
+        // could discard a cached (or better-scored) parent appearing later.
+        if #scored ge 12 then break; end if;
     end for;
     cmp := function(a, b)
         for i in [1 .. 4] do
@@ -505,27 +673,31 @@ function glue_scored(L, dual_norm_bound, rank_cap, use_cache)
         return 0;
     end function;
     Sort(~scored, cmp);
+    if #scored gt 4 then scored := scored[1 .. 4]; end if;
     return scored;
 end function;
 
 // Enumerate the genus of the positive definite lattice L, preferring the orbit
 // method and falling back to (and topping up with) the p-neighbour walk.
+// Returns the representatives and the provenance <ambient genus label,
+// [<ambient counter, vector>]> (0 when unknown, e.g. p-neighbour fallback or a
+// parent with no recorded label/counters).  The recursion itself only consumes
+// the first return value; the provenance is what FillGenus stores as
+// ambient_genus / ambient_lattice / orthogonal_complement.
 function genus_reps_orth_rec(L, depth, dual_norm_bound, max_vecs, rank_cap, use_cache)
-    ZZ := Integers();
+    check_orth_deadline();
     if use_cache then
-        if not assigned ZZ`GenusOrthCache then
-            ZZ`GenusOrthCache := AssociativeArray();
-        end if;
-        hit, cached := cache_lookup(L);
+        hit, ent := cache_lookup_full(L);
         if hit then
             vprintf GenusReps, 1 : "orth: cache hit for rank %o det %o\n", Rank(L), Determinant(L);
-            return cached;
+            return ent[3], ent[6];
         end if;
     end if;
 
     mass := Mass(L);
     aut := AutomorphismGroupFaster(L);
     reps := [];
+    prov := 0;
     if mass eq 1/#aut then
         // The genus consists of a single class.
         reps := [L];
@@ -543,12 +715,27 @@ function genus_reps_orth_rec(L, depth, dual_norm_bound, max_vecs, rank_cap, use_
                 vprintf GenusReps, 1 : "orth: parent genus rank %o det %o: %o classes in %o s\n",
                     Rank(bestP), Determinant(bestP), #parent_reps, Cputime(tpar);
                 tdesc := Cputime();
-                okd, reps, mass_left := orth_descend(parent_reps, besto, bestm, L, max_vecs);
+                okd, reps, mass_left, dprov := orth_descend(parent_reps, besto, bestm, L, max_vecs, use_cache);
                 vprintf GenusReps, 1 : "orth: descent to rank %o det %o took %o s\n",
                     Rank(L), Determinant(L), Cputime(tdesc);
                 if not okd then continue; end if;    // too many type vectors: next candidate
                 if mass_left ne 0 then
                     reps := kneser_topup(L, reps, mass_left);
+                end if;
+                // Resolve the ambient references: the parent's label and per-class
+                // counters live on its cache entry (present when the parent came
+                // from the disk tier, i.e. was already filled by the pipeline).
+                plabel := "";
+                pcounters := [];
+                if use_cache then
+                    okp, pent := cache_lookup_full(bestP);
+                    if okp then plabel := pent[4]; pcounters := pent[5]; end if;
+                end if;
+                if plabel ne "" and #pcounters eq #parent_reps then
+                    entries := [<pcounters[pr[1]], pr[2]> : pr in dprov];
+                    // classes appended by the top-up have no descent provenance
+                    entries cat:= [<0, [Z | ]> : i in [#entries + 1 .. #reps]];
+                    prov := <plabel, entries>;
                 end if;
                 done := true;
                 break;
@@ -564,13 +751,13 @@ function genus_reps_orth_rec(L, depth, dual_norm_bound, max_vecs, rank_cap, use_
     if use_cache then
         // Insert the query rep and (for small genera) every class rep, so a later
         // chain that glues into a different class of this genus still hits.
-        cache_insert(L, reps);
+        cache_insert(L, reps : prov := prov);
     end if;
-    return reps;
+    return reps, prov;
 end function;
 
 intrinsic GenusRepresentativesOrth(L::Lat : DualNormBound := 32, MaxVectors := 100000,
-                                            Depth := 16, RankCap := 24, UseCache := true) -> SeqEnum
+                                            Depth := 16, RankCap := 24, UseCache := true) -> SeqEnum, Any
 {Representatives for the isometry classes in the genus of the positive definite
 lattice L, computed by the orbit method of Chenevier-Taibi: recursively glue L up to
 a parent genus of rank+1 and smaller determinant, and descend back by taking orthogonal
@@ -583,7 +770,11 @@ DualNormBound caps the dual norm o/m of the vectors enumerated in a descent step
 MaxVectors caps the number of type vectors considered per parent representative;
 Depth caps the recursion; RankCap is the largest rank for which an uncached parent
 genus may be enumerated (cached parents are always used); UseCache memoizes
-enumerated genera in the current Magma process.}
+enumerated genera in the current Magma process (with a disk tier under orth_cache/).
+
+The second return value is the provenance <ambient genus label, [<ambient counter,
+vector>]> when the final descent's parent genus carries a label and counters (i.e.
+was already filled by the pipeline), and 0 otherwise.}
     G := GramMatrix(L);
     require IsPositiveDefinite(G) : "The lattice must be positive definite";
     require forall{ e : e in Eltseq(G) | IsIntegral(e) } : "The lattice must be integral";
@@ -593,13 +784,16 @@ enumerated genera in the current Magma process.}
     if c gt 1 then
         prim := LatticeWithGram(GramMatrix(L0) div c);
         reps := genus_reps_orth_rec(prim, Depth, DualNormBound, MaxVectors, RankCap, UseCache);
-        return [LatticeWithGram(c * GramMatrix(r)) : r in reps];
+        // provenance refers to the primitive lattices, so do not propagate it
+        return [LatticeWithGram(c * GramMatrix(r)) : r in reps], 0;
     end if;
-    return genus_reps_orth_rec(L0, Depth, DualNormBound, MaxVectors, RankCap, UseCache);
+    reps, prov := genus_reps_orth_rec(L0, Depth, DualNormBound, MaxVectors, RankCap, UseCache);
+    return reps, prov;
 end intrinsic;
 
 function genus_reps_orth(L)
-    return GenusRepresentativesOrth(L);
+    reps, prov := GenusRepresentativesOrth(L);
+    return reps, prov;
 end function;
 
 intrinsic GenusRepresentativesOrthBatch(targets::SeqEnum[Lat] : DualNormBound := 32,
@@ -638,6 +832,13 @@ representative sequences parallel to the input.}
     // Group the remaining targets by (o, m, parent genus) of their best candidate.
     groups := [* *];   // entries <o, m, P, GP, [<index, L0, GenusL0, MassL0>]>
     singles := [];
+    if Depth le 0 then
+        // No glue level available: the single-target path's depth accounting
+        // handles the fallback (the audit found the batch path allowed one more
+        // level than Depth permits).
+        singles := pending;
+        pending := [];
+    end if;
     for t in pending do
         scored := glue_scored(t[2], DualNormBound, RankCap, UseCache);
         if #scored eq 0 then
@@ -666,7 +867,9 @@ representative sequences parallel to the input.}
         o := g[1]; m := g[2]; P := g[3]; members := g[5];
         vprintf GenusReps, 1 : "orth batch: %o target(s) share parent rank %o det %o (o=%o, m=%o)\n",
             #members, Rank(P), Determinant(P), o, m;
-        parent_reps := genus_reps_orth_rec(P, Depth, DualNormBound, MaxVectors, RankCap, UseCache);
+        // The glue step above already consumed one level, matching the
+        // single-target recursion's Depth accounting.
+        parent_reps := genus_reps_orth_rec(P, Depth - 1, DualNormBound, MaxVectors, RankCap, UseCache);
         tlist := [<mem[2], mem[3], mem[4]> : mem in members];
         okd, res, others := orth_descend_multi(parent_reps, o, m, tlist, MaxVectors);
         if not okd then
@@ -675,12 +878,24 @@ representative sequences parallel to the input.}
             for mem in members do Append(~singles, <mem[1], mem[2]>); end for;
             continue;
         end if;
+        plabel := "";
+        pcounters := [];
+        if UseCache then
+            okp, pent := cache_lookup_full(P);
+            if okp then plabel := pent[4]; pcounters := pent[5]; end if;
+        end if;
         for k in [1 .. #members] do
             reps := res[k][1];
             if res[k][2] ne 0 then
                 reps := kneser_topup(members[k][2], reps, res[k][2]);
             end if;
-            if UseCache then cache_insert(members[k][2], reps); end if;
+            prov := 0;
+            if plabel ne "" and #pcounters eq #parent_reps then
+                entries := [<pcounters[pr[1]], pr[2]> : pr in res[k][3]];
+                entries cat:= [<0, [Z | ]> : i in [#entries + 1 .. #reps]];
+                prov := <plabel, entries>;
+            end if;
+            if UseCache then cache_insert(members[k][2], reps : prov := prov); end if;
             results[members[k][1]] := reps;
         end for;
         if UseCache then
@@ -704,64 +919,91 @@ end intrinsic;
 intrinsic UseOrthHeuristic(n::RngIntElt, mass::Any) -> BoolElt
 {Whether the orbit method should be preferred over the p-neighbour walk for a
 definite genus of rank n and Minkowski-Siegel mass mass (pass 0 when unknown).
-Tuned on benchmarks (2026-07): the neighbour walk wins only for small class
-numbers at low rank; the orbit method wins from rank 15 (Kneser cost grows like
-2^rank) and whenever the mass -- a proxy for the class number, hence for the
-walk's per-class dedup overhead -- is large (e.g. 27x faster at rank 6, det
-2^11, h = 815).}
+
+Tuned on benchmarks (2026-07): the orbit method wins from rank 15 (Kneser cost
+grows like 2^rank), and at any rank once the genus is genuinely large (27x
+faster at rank 6, det 2^11, h = 815).  NB the mass threshold keys on
+DETERMINANT scale, not class-number scale: mass ~ h/|Aut| and automorphism
+groups at low determinant are enormous (measured on the C=256 census: rank-12
+genera with h = 55 have mass ~ 1.4e-4), so small-determinant genera never
+trip it -- which matches the benchmarks, where the neighbour walk wins that
+regime anyway.  Both measured crossover regimes (high rank at small
+determinant, large smooth determinant at low rank with h in the hundreds)
+satisfy mass >= 5; be wary of reading the threshold as "class number >= 5".}
     if n ge 15 then return true; end if;
     if Type(mass) in [RngIntElt, FldRatElt] and mass ge 5 then return true; end if;
     return false;
 end intrinsic;
 
-intrinsic GenusReps(L0::Lat : Timeout := 1800, UseOrth := true) -> BoolElt, SeqEnum
+intrinsic GenusReps(L0::Lat : Timeout := 1800, UseOrth := true) -> BoolElt, SeqEnum, Any
 {Enumerate the genus of L0 with the method dispatch used by the LMFDB lattice
-pipeline, under a wall-clock timeout (in seconds).  Returns success and the list of
-representatives (empty on failure).
+pipeline, under a wall-clock timeout (in seconds).  Returns success, the list of
+representatives (empty on failure), and -- for the orbit method -- the provenance
+<ambient genus label, [<ambient counter, vector>]> (0 when unavailable).
 
 Rank-2 lattices of square determinant are handled directly (Magma's
-GenusRepresentatives rejects square discriminants); definite lattices of rank >= 3
-use the orbit method (UseOrth, with internal p-neighbour fallback/top-up) or the
-mass-verified p-neighbour enumeration; indefinite lattices of rank >= 3 use spinor
-genera (exact by Eichler); everything else uses Magma's GenusRepresentatives.}
+GenusRepresentatives rejects square discriminants); positive definite lattices of
+rank >= 3 use the orbit method (UseOrth, with internal p-neighbour fallback/top-up)
+or the mass-verified p-neighbour enumeration; negative definite lattices are negated,
+enumerated as positive definite, and negated back; genuinely indefinite lattices of
+rank >= 3 enumerate every spinor genus in the genus (each is a single class by
+Eichler); everything else uses Magma's GenusRepresentatives.
+
+Every TimeoutCall here carries HardKill: Magma's Alarm is an uncatchable SIGALRM
+that is never delivered inside uninterruptible C-level builtins (exactly what the
+enumerators are), so without the watchdog a stuck child never dies and the parent
+blocks forever in WaitForAllChildren -- in production this looked like ~112-minute
+fill batches that still reported failed=0.  Do not drop it in a refactor.}
     n := Rank(L0);
-    definite := IsPositiveDefinite(GramMatrix(L0));
+    Gm := GramMatrix(L0);
+    posdef := IsPositiveDefinite(Gm);
+    negdef := (not posdef) and IsPositiveDefinite(-Gm);
+    prov := 0;
     // Rank-2 lattices of square determinant -m^2 have isotropic (split) forms, on
     // which Magma's GenusRepresentatives fails (it reduces to binary quadratic
     // forms, which reject square discriminants); these are handled directly.  Note
     // the class number is NOT always 1 -- e.g. for m = 5 some genera have two
     // classes.
     if n eq 2 and IsSquare(-Determinant(L0)) then
-        genus_success, reps, elapsed := TimeoutCall(Timeout, genus_reps_square_disc, <L0>, 1);
+        genus_success, reps, elapsed := TimeoutCall(Timeout, genus_reps_square_disc, <L0>, 1 : HardKill := true);
         vprintf GenusReps, 1 : "Genus representatives (square discriminant) computed in %o seconds\n", elapsed;
-    elif definite and (n ge 3) then
-        // Definite rank >= 3: the orbit method (GenusRepresentativesOrth) descends from
-        // easier parent genera and mass-verifies, falling back internally to the
-        // p-neighbour enumeration (GenusRepresentativesFaster) whenever no cheap
-        // descent exists; both are provably complete when they terminate.  Magma's
-        // GenusRepresentatives is avoided entirely (slow, and reliably fails at
-        // rank >= 7 with the "cs must be non-empty" bug).
-        fn := UseOrth select genus_reps_orth else genus_reps_Faster;
-        genus_success, reps, elapsed := TimeoutCall(Timeout, fn, <L0>, 1);
+    elif posdef and (n ge 3) then
+        // Positive definite rank >= 3: the orbit method (GenusRepresentativesOrth)
+        // descends from easier parent genera and mass-verifies, falling back
+        // internally to the p-neighbour enumeration (GenusRepresentativesFaster)
+        // whenever no cheap descent exists; both are provably complete when they
+        // terminate.  Magma's GenusRepresentatives is avoided entirely (slow, and
+        // reliably fails at rank >= 7 with the "cs must be non-empty" bug).
+        if UseOrth then
+            genus_success, reps, elapsed := TimeoutCall(Timeout, genus_reps_orth, <L0>, 2 : HardKill := true);
+        else
+            genus_success, reps, elapsed := TimeoutCall(Timeout, genus_reps_Faster, <L0>, 1 : HardKill := true);
+        end if;
         vprintf GenusReps, 1 : "Genus representatives (%o) computed in %o seconds\n",
             UseOrth select "orbit method" else "p-neighbours", elapsed;
-    elif (not definite) and (n ge 3) then
-        // Indefinite rank >= 3: SpinorRepresentatives is the default.  By Eichler each
-        // proper spinor genus is a single class, so the spinor-genus representatives ARE
-        // the genus representatives -- provably exact here.  It also avoids Magma's
-        // GenusRepresentatives, which fails on some indefinite genera (e.g. signature
-        // (2,2) rank 4 -- "Illegal null sequence" / "cs must be non-empty" in its LatNF
-        // code) and is slower even when it works.
-        genus_success, reps, elapsed := TimeoutCall(Timeout, genus_reps_Spinor, <L0>, 1);
+    elif negdef then
+        // Negative definite: negate, enumerate the full positive definite genus,
+        // negate back.  (Previously these fell into the indefinite branch, whose
+        // Eichler justification does not apply to definite lattices.)
+        fn := UseOrth select genus_reps_negdef_orth else genus_reps_negdef_walk;
+        genus_success, reps, elapsed := TimeoutCall(Timeout, fn, <L0>, 1 : HardKill := true);
+        vprintf GenusReps, 1 : "Genus representatives (negated definite) computed in %o seconds\n", elapsed;
+    elif (n ge 3) then
+        // Genuinely indefinite rank >= 3: one representative per spinor genus of the
+        // genus; each spinor genus is a single isometry class by Eichler.
+        genus_success, reps, elapsed := TimeoutCall(Timeout, genus_reps_Spinor, <L0>, 1 : HardKill := true);
         vprintf GenusReps, 1 : "Genus representatives (spinor genera) computed in %o seconds\n", elapsed;
     else
         // Rank 1-2: neither the definite rank >= 3 methods nor the spinor route
         // applies, so use Magma's general GenusRepresentatives.
-        genus_success, reps, elapsed := TimeoutCall(Timeout, genus_reps_Magma, <L0>, 1);
+        genus_success, reps, elapsed := TimeoutCall(Timeout, genus_reps_Magma, <L0>, 1 : HardKill := true);
         vprintf GenusReps, 1 : "Genus representatives computed in %o seconds\n", elapsed;
     end if;
     if genus_success then
-        return true, reps[1];
+        if posdef and (n ge 3) and UseOrth then
+            prov := reps[2];
+        end if;
+        return true, reps[1], prov;
     end if;
-    return false, [];
+    return false, [], 0;
 end intrinsic;
