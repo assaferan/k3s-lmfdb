@@ -37,9 +37,10 @@ parser.add_argument("--batch-size", type=int, default=32, help="Backstop cap on 
 
 # Don't store too many lattices
 parser.add_argument("--enum-masslimit", type=int, default=1000, help="If the mass of a genus is larger than this threshold, don't even try to enumerate lattices within")
+parser.add_argument("--enum-timeout", type=int, default=300, help="Seconds allowed for the genus-representatives computation of a single genus.  This was previously not passed through at all, so it silently fell back to run_fill_genus.m's 60s default and 1.8%% of definite genera (all rank 11-12) failed to enumerate entirely -- no class number and no lattices, a hole that null-scanning cannot see since the genus is simply absent from the per-lattice tables.  The computation is hard-killed past this, so it still bounds the worst case.")
 parser.add_argument("--enum-timelimit", type=int, default=60, help="Maximum wall-clock seconds to spend in the per-lattice loop of a genus; past it the genus keeps its genus-level record (class number, adjacency) but stores per-lattice data only for the lattices reached so far.  Calibrated at C=256 rank 1-12: dropping 300->60 cut the slow-batch tail ~3x (worst batch 831s->264s) with zero failures, since the per-lattice ThetaSeries loop is the dominant high-rank cost and its per-lattice data is the least critical to retain.")
 parser.add_argument("--enum-sizelimit", type=int, default=1000, help="For genera with class number larger than this, do not store individual lattices within the genus")
-parser.add_argument("--enum-adjlimit", type=int, default=20000, help="Work budget for the adjacency (Hecke) matrix: skip it when the estimated work (~class_number * sum_p p^(rank-2) over the Hecke primes p) exceeds this.  The p-neighbour cost grows as p^(rank-2), so this adaptively cuts off high rank and/or high class number.  Default is high enough to compute it through ~rank 12 at small determinant (where it is cheap) and only guard genuinely extreme cases; lower it if adjacency becomes a bottleneck at large determinant.")
+parser.add_argument("--enum-adjlimit", type=int, default=0, help="Work budget for the adjacency (Hecke) matrix: skip it when the estimated work (~class_number * sum_p p^(rank-2) over the Hecke primes p) exceeds this; 0 = no budget, always attempt it.  Defaults to 0 because the estimate mis-prices reality badly -- at rank 7 the sum_p p^5 term crosses a 20000 budget at class number 6, yet a whole rank-7 genus fills in ~4s, so a budget of 20000 silently dropped Hecke data for 65 rank-7 genera (4.4%% of definite genera overall) that were never expensive.  AdjacencyMatrix now runs under a hard-killed TimeoutCall, which bounds it by measured time instead of a bad model; prefer that.  Set this only if you specifically want to skip adjacency without even trying.")
 
 # Skip stages
 parser.add_argument("--skip-list-genera", action="store_true", help="Assume that genera have already been listed")
@@ -99,10 +100,12 @@ def genus_work(r, definite):
         return 0.5
     if r in _DEF_COST:
         return _DEF_COST[r]
-    # Definite rank >= 9: the per-lattice loop saturates enum_timelimit, so the cost is
-    # ~timelimit plus a few seconds of representatives/adjacency.  This tracks
+    # Definite rank >= 9: the per-lattice loop saturates enum_timelimit, so the typical
+    # cost is ~timelimit plus a few seconds of representatives/adjacency.  This tracks
     # --enum-timelimit and extrapolates to the higher ranks of the target run, which
-    # saturate the cap the same way.
+    # saturate the cap the same way.  This is a median, not a bound: a minority of these
+    # genera (~12% at rank 11-12) have slow representatives and cost up to --enum-timeout
+    # extra, so an occasional batch runs well over --batch-work-target.
     return args.enum_timelimit + 5.0
 
 def build_enumeration_inputs(fname):
@@ -185,9 +188,9 @@ def main():
             # skip enumerating past enum-masslimit, store genus-level data only past
             # enum-sizelimit, and cap per-genus wall-clock at enum-timelimit.
             parallel("genus_jobs.txt", "fill.joblog",
-                     [f"masslimit:={args.enum_masslimit}", f"sizelimit:={args.enum_sizelimit}",
-                      f"timelimit:={args.enum_timelimit}", f"adjlimit:={args.enum_adjlimit}",
-                      "labels:={1}", "run_fill_genus.m"])
+                     [f"timeout:={args.enum_timeout}", f"masslimit:={args.enum_masslimit}",
+                      f"sizelimit:={args.enum_sizelimit}", f"timelimit:={args.enum_timelimit}",
+                      f"adjlimit:={args.enum_adjlimit}", "labels:={1}", "run_fill_genus.m"])
 
     if not args.skip_embeddings:
         print("Finding lattice embeddings (TODO: Oscar embedding code)")
