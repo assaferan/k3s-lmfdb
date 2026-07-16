@@ -360,36 +360,64 @@ def integer_basis(B):
 
     return zbasis
 
+def characteristic_vector(G):
+    """A characteristic vector w: q(x) = b(x,w) mod 2 for every x, i.e. G*w = diag(G) mod 2.
+
+    In characteristic 2 the cross terms 2*G_ij*x_i*x_j vanish and x_i^2 = x_i, so
+    q(x) = sum_i G_ii*x_i mod 2 -- a LINEAR functional.  It is therefore b(x,w) for a
+    single w, obtained by solving G*w = diag(G) over F_2.  Returns None when the system
+    has no solution (b need not be onto mod 2 once det is even).
+    """
+    n = G.nrows()
+    G2 = G.change_ring(GF(2))
+    d = vector(GF(2), [G[i, i] for i in range(n)])
+    try:
+        w2 = G2.solve_right(d)
+    except ValueError:
+        return None
+    return vector(ZZ, [Integer(int(x)) for x in w2])
+
+
 def fnd(L):
-    B = L.basis_matrix()
+    """A characteristic vector of L whose 2-neighbour is even, or -1 if none exists.
+
+    N(v) = {x : b(x,v) = 0 mod 2} + Z*(v/2) is even exactly when v is CHARACTERISTIC and
+    q(v) = 0 mod 8.  Both halves are needed: q(v) = 0 mod 8 only makes the one new vector
+    v/2 have even norm, and says nothing about the index-2 sublattice v^perp, which is
+    where an odd vector otherwise survives.  N(v) is even iff q vanishes on v^perp mod 2,
+    i.e. iff the linear functional q(.) mod 2 = b(., w) vanishes there, i.e. iff v = w.
+
+    The previous version searched range(8) over the first 5 coordinates for any primitive
+    v with q(v) = 0 mod 8, checking neither that v was characteristic nor that the
+    resulting neighbour was even -- so it returned odd neighbours (on Z^6 it accepts
+    v = (0,1,1,1,1,2), whose neighbour contains (0,0,0,0,1,0) of norm 1).  Restricting to
+    a subform by zeroing variables cannot work either: characteristic vectors of Z^n are
+    all-odd, so zeroing a coordinate leaves the coset w + 2L entirely.
+
+    No search is needed.  Writing v = w + 2u,
+        q(w + 2u) = q(w) + 4*(b(w,u) + q(u)),
+    and mod 2 both b(w,u) and q(u) equal u.diag(G), so their sum vanishes: q is constant
+    mod 8 on the coset.  So q(w) mod 8 is an invariant -- for unimodular L it is the
+    signature mod 8 -- and an even 2-neighbour exists iff it is 0.  On Z^n every
+    characteristic vector is all-odd, giving q = n mod 8, which recovers the classical
+    "even unimodular iff 8 | n" (Z^8 -> E8; Z^6 -> none).
+    """
     G = L.gram_matrix()
-    # zbasis = integer_basis((B*G)%2)
-    # zbasis = integer_basis(G%2)
-    for v in list(itertools.product(range(8), repeat=min(len(G.rows()),5))):
-        prim = False
-        vv = []
-        for i in range(len(v)): 
-            vv.append(Integer(v[i]))
-        while len(vv) < len(G.rows()):
-            vv.append(0)
-        vv = vector(ZZ, vv)
-        # print("vv", vv)
-        #res = [0]*len(G.rows())
-        #res = vector(res)
-        #for i in range(len(G.rows())):
-            # res += vector(zbasis[i] * vv[i])
-        #    res += vector(vv[i])
-        for val in vv:#res:
-            if val%2==1:
-                prim=True
-        if prim==False:
-            continue
-        if (vv*G * vv.column())[0] % 8==0:
-            return vv # * L.basis_matrix()
-    
-    return -1
+    w = characteristic_vector(G)
+    if w is None:
+        return -1
+    if (w * G * w.column())[0] % 8 != 0:
+        return -1                      # invariant on the coset, so no lift can fix it
+    return w
 
 def finish(L):
+    """Maximal EVEN overlattice, given L maximal among integral overlattices.
+
+    A 2-neighbour preserves the determinant, so when an even one exists it is even AND
+    still maximal -- take it.  Otherwise the even sublattice (index 2, determinant *4) is
+    the best available.  fnd decides which case holds in O(n^3) via the characteristic
+    vector, with no enumeration.
+    """
     evenL = even_sublattice(L)
     if L==evenL:
         return L
@@ -397,8 +425,7 @@ def finish(L):
     v = fnd(L)
     if v == -1:
         return evenL
-    else:
-        return p_neighbor_lattice(L,v)
+    return p_neighbor_lattice(L,v)
 
 # ------------------------
 # Helpers for reducing rationals mod p and building p*M^{-1} over F_p
