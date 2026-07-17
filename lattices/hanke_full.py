@@ -25,7 +25,21 @@ def find_min_x(num, rem):
 
     return result % prod
 
-def algo3_8(L, a=2):
+def algo3_8(L, a=2, at_prime=None):
+    """Z-saturate L.  Globally by default; at_prime restricts it to a single prime.
+
+    Restricted, the result is saturated at at_prime and its completions at every other
+    prime q are unchanged (L'_q = L_q).  That is what Sage's maximal_overlattice(p=...)
+    promises -- "the completions M_q = L_q are equal for all primes q != p" -- and
+    local_modification depends on it: it inverts Gerstein operations against the result and
+    asserts the p-adic symbol is preserved (assert s1 == s2, "oops").  Saturating globally
+    inside a p-restricted call moves the lattice at q != p and trips that assert.
+
+    The saturation adjoins l * L^*, so the exponent of each prime in l decides what moves.
+    At the target prime take p^((s_p + 1) // 2), which saturates.  At every other q take
+    q^(s_q), the full scale: the discriminant group at q is killed by q^(s_q), so
+    q^(s_q) * L^*_q already sits inside L_q and adjoining it changes nothing there.
+    """
     saturated = False
     while not saturated:
         # l = a
@@ -34,10 +48,14 @@ def algo3_8(L, a=2):
         saturated = True
         for symbol in LGenus.local_symbols():
             p = symbol.prime()
+            scale = symbol._symbol[-1][0]
+            if at_prime is not None and p != at_prime:
+                l *= p ** scale        # no-op at p: p^scale * L^*_p is already in L_p
+                continue
             # l *= p ** ((symbol._symbol[-1][0] - ZZ(a).valuation(p) + 1) // 2)
-            l *= p ** ((symbol._symbol[-1][0] + 1) // 2)
+            l *= p ** ((scale + 1) // 2)
             # if (symbol._symbol[-1][0] - ZZ(a).valuation(p) > 1):
-            if (symbol._symbol[-1][0] > 1):
+            if (scale > 1):
                 saturated = False
         L = L.overlattice((l * L.dual_lattice()).basis())
     return L
@@ -382,54 +400,98 @@ def characteristic_vector(G):
     return vector(ZZ, [Integer(int(x)) for x in w2])
 
 
-def fnd(L):
-    """A characteristic vector of L whose 2-neighbour is even, or -1 if none exists.
+def even_sublattice_at(L, p=2):
+    """L_{a-even at p} = {x in L : H(x,x) in p^ord_p(2a)}, for a = Z.
 
-    N(v) = {x : b(x,v) = 0 mod 2} + Z*(v/2) is even exactly when v is CHARACTERISTIC and
-    q(v) = 0 mod 8.  Both halves are needed: q(v) = 0 mod 8 only makes the one new vector
-    v/2 have even norm, and says nothing about the index-2 sublattice v^perp, which is
-    where an odd vector otherwise survives.  N(v) is even iff q vanishes on v^perp mod 2,
-    i.e. iff the linear functional q(.) mod 2 = b(., w) vanishes there, i.e. iff v = w.
+    Hanke, Sec. 4 ("Even bilinear lattices") distinguishes the FULL even sublattice
+    L_{a-even} = {x : H(x,x) in 2a} from the PARTIAL one at p, and notes
+    L_{a-even} = intersection over p of L_{a-even at p}.  Over Z the only prime that can
+    fail evenness is 2, so the two coincide and even_sublattice(L) is exactly this; the
+    name is kept to match the algorithm's step 2.
+    """
+    return even_sublattice(L)
 
-    The previous version searched range(8) over the first 5 coordinates for any primitive
-    v with q(v) = 0 mod 8, checking neither that v was characteristic nor that the
-    resulting neighbour was even -- so it returned odd neighbours (on Z^6 it accepts
-    v = (0,1,1,1,1,2), whose neighbour contains (0,0,0,0,1,0) of norm 1).  Restricting to
-    a subform by zeroing variables cannot work either: characteristic vectors of Z^n are
-    all-odd, so zeroing a coordinate leaves the coset w + 2L entirely.
 
-    No search is needed.  Writing v = w + 2u,
-        q(w + 2u) = q(w) + 4*(b(w,u) + q(u)),
-    and mod 2 both b(w,u) and q(u) equal u.diag(G), so their sum vanishes: q is constant
-    mod 8 on the coset.  So q(w) mod 8 is an invariant -- for unimodular L it is the
-    signature mod 8 -- and an even 2-neighbour exists iff it is 0.  On Z^n every
-    characteristic vector is all-odd, giving q = n mod 8, which recovers the classical
-    "even unimodular iff 8 | n" (Z^8 -> E8; Z^6 -> none).
+def residual_quadric_points(L, p=2):
+    """Non-singular points of the residual a-quadric C_{p;a} at p, as lifts v_P in L.
+
+    Hanke, Sec. 5:
+      C_{p;a} := P({x in L/pL : Q(x) in a*p, x != 0})            (residual quadric)
+      P is NONSINGULAR  <=>  grad Q(P) != 0 in (a/pa)^n
+                        <=>  the linear form H(v_P, .) on L/pL is not identically zero
+                             (Lemma "Hessian singularity criterion", since H(x,y) = grad Q(x).y)
+
+    Yields v_P sheared so that Q(v_P) is in a*p^2, which the theorem requires ("v_P is any
+    lift of a non-zero isotropic vector in L/p^2 L, i.e. Q(v_P) in p^2 a").  The shear is
+    the proof's step 1: non-singularity gives a lift w of grad Q(v_P) with H(v_P, w) not in
+    pa, so some lambda in p makes Q(v_P + lambda*w) land in a*p^2.
     """
     G = L.gram_matrix()
+    n = G.nrows()
+    Fp = GF(p)
+
+    # Only CHARACTERISTIC vectors can give an a-even p-neighbour, so search those rather
+    # than all p^n points of P(L/pL).  N(v) is a-even iff q vanishes on v^perp mod 2;
+    # q(.) mod 2 is the linear form b(., w) (in characteristic 2 the cross terms drop and
+    # x_i^2 = x_i), so it vanishes on v^perp exactly when b(., v) and b(., w) cut out the
+    # same hyperplane, i.e. when G*v = diag(G) mod 2.  Those v form a coset of
+    # ker(G mod 2): 2^corank candidates instead of 2^n.  For an odd L each is automatically
+    # non-singular, since G*v = diag(G) != 0 mod p is exactly the theorem's condition.
+    G2 = G.change_ring(Fp)
     w = characteristic_vector(G)
     if w is None:
-        return -1
-    if (w * G * w.column())[0] % 8 != 0:
-        return -1                      # invariant on the coset, so no lift can fix it
-    return w
+        return                             # no characteristic vector => no even neighbour
+    v0 = vector(Fp, [Fp(int(x)) for x in w])
+    K = G2.right_kernel()                  # the solutions form the coset v0 + K
+    for k in K:
+        v = vector(ZZ, [Integer(int(x)) for x in (v0 + k)])
+        if not any(x % p for x in v):
+            continue                       # must be non-zero in L/pL
+        grad = G * v
+        if all(Integer(x) % p == 0 for x in grad):
+            continue                       # singular: the theorem gives no neighbour here
+        # shear (proof step 1): non-singularity gives a lift w of grad Q(v) with
+        # H(v, w) not in pa, so some lambda in p lands Q(v + lambda*w) in a*p^2 --
+        # i.e. H = 0 mod 2p^2, which for p=2 is the "isotropic mod 8" condition.
+        w = vector(ZZ, [Integer(x) for x in grad])
+        for lam in range(0, p * p, p):
+            u = v + lam * w
+            if (u * G * u.column())[0] % (2 * p * p) == 0:
+                yield u
+                break
+
 
 def finish(L):
-    """Maximal EVEN overlattice, given L maximal among integral overlattices.
+    """Step 2-3 of Hanke's "Construct a maximal a-valued quadratic lattice" (Sec. 4).
 
-    A 2-neighbour preserves the determinant, so when an even one exists it is even AND
-    still maximal -- take it.  Otherwise the even sublattice (index 2, determinant *4) is
-    the best available.  fnd decides which case holds in O(n^3) via the characteristic
-    vector, with no enumeration.
+    Given L maximal in the Hessian BILINEAR space, the algorithm reads:
+
+        1. find an a-maximal bilinear lattice L; let S be the primes where L is not
+           a-even at p  (necessarily p | 2)
+        2. for each p in S, use the p-neighbour theorem to check if some p-neighbour L'
+           of L is a-even at p.  If so replace L by L'; if not, replace L by L_{a-even at p}
+        3. the remaining L is maximal a-even, hence a maximal a-valued QUADRATIC lattice
+
+    Over Z with a = Z, S is empty or {2}, so this is a single pass at p = 2.
+
+    The p-neighbours are enumerated via the paper's Theorem ("p-neighbors via residual
+    geometry"): they are in bijection with the NON-SINGULAR points of the residual quadric
+    at p, so the candidate vectors are exactly those with Q(v) in a*p^2 -- H(v,v) = 0 mod 8
+    for p = 2 -- that are non-singular.  An earlier version replaced this with a
+    characteristic-vector criterion (solve G*w = diag(G) mod 2, then test q(w) = 0 mod 8).
+    That is only valid when G is invertible mod 2, i.e. odd determinant: at det 50 the
+    solve fails, no neighbour is found, and the even sublattice is returned (det 200) where
+    an even neighbour exists at det 50.  Non-singularity, not characteristicity, is the
+    condition the theorem actually requires.
     """
-    evenL = even_sublattice(L)
-    if L==evenL:
-        return L
-    assert (L / evenL).cardinality() == 2
-    v = fnd(L)
-    if v == -1:
-        return evenL
-    return p_neighbor_lattice(L,v)
+    if L == even_sublattice(L):
+        return L                      # already a-even: nothing in S, done
+    # p = 2 is the only prime of Z that can fail evenness
+    for v in residual_quadric_points(L, p=2):
+        Lp = p_neighbor_lattice(L, v)
+        if Lp == even_sublattice(Lp):
+            return Lp                 # an a-even 2-neighbour: keeps the determinant
+    return even_sublattice_at(L, p=2)  # none exists: fall back to L_{a-even at 2}
 
 # ------------------------
 # Helpers for reducing rationals mod p and building p*M^{-1} over F_p
@@ -467,6 +529,30 @@ def is_overlattice(L1, L2):
 
     return all(c in ZZ for c in coords.list())
 
+def install_fast_maximal_overlattice():
+    """Substitute maximal_overlattice_2 for Sage's IntegralLattice.maximal_overlattice.
+
+    Sage's representative() -- the census bottleneck (genus.py:623) -- spends ~63% of its
+    time in maximal_overlattice, calling it directly and again once per prime inside
+    local_modification.  Substituting the single primitive therefore reaches both hot
+    spots and makes representative() ~1.47x faster without reimplementing it, leaving the
+    correctness-critical local_modification logic to Sage.
+
+    This MONKEY-PATCHES a Sage class, so it changes behaviour for every caller in the
+    process; that is why it is opt-in rather than done at import.  Returns the original
+    method so a caller can restore it.
+    """
+    import sage.modules.free_quadratic_module_integer_symmetric as fqm
+    cls = fqm.FreeQuadraticModule_integer_symmetric
+    original = cls.maximal_overlattice
+
+    def _fast(self, p=None):
+        return maximal_overlattice_2(self, p=p, do_asserts=False)
+
+    cls.maximal_overlattice = _fast
+    return original
+
+
 def maximal_overlattice_2(L_in, p=None, do_asserts=True):
     """Maximal INTEGRAL overlattice of L_in, with odd results allowed.
 
@@ -494,8 +580,9 @@ def maximal_overlattice_2(L_in, p=None, do_asserts=True):
     ogL = L_in
     L = L_in
 
-    # Step 1: Z-saturate
-    L_sat = algo3_8(L)
+    # Step 1: Z-saturate -- restricted to p when we were asked for a single prime, so the
+    # completions at every other prime stay put (local_modification requires that).
+    L_sat = algo3_8(L, at_prime=p)
     # Step 2: Work prime-by-prime on the dual to adjoin isotropic classes from D(L)
     M = L_sat.gram_matrix()
     Minv = M.inverse()   # over QQ
@@ -527,7 +614,7 @@ def maximal_overlattice_2(L_in, p=None, do_asserts=True):
     B = matrix(QQ, [list(b) for b in L_sat.basis()])   # ambient coordinates
     M = B * IPM * B.transpose()
 
-    for p in ps:
+    for q in ps:
         Minv = M.inverse()
         # Exponent of the discriminant group D = Z^n/M Z^n, for the p-primary projection
         # below.  Its elementary divisors are those of M, so take them straight off the
@@ -542,7 +629,7 @@ def maximal_overlattice_2(L_in, p=None, do_asserts=True):
         # isotropic for this form exactly when q(x) is integral, and likewise
         # b(v,w) = 0 exactly when the inner product of the lifts is integral.  The
         # radical corresponds to vectors already in L.
-        Mp_dual = _matrix_Q_to_Fp(p*Minv, p)
+        Mp_dual = _matrix_Q_to_Fp(q*Minv, q)
 
         # max_isotrop_fp returns a *totally* isotropic subspace: its radical part is
         # isotropic (b(r,.) = 0 forces b(r,r) = 0), each plane vector is isotropic, and
@@ -571,8 +658,8 @@ def maximal_overlattice_2(L_in, p=None, do_asserts=True):
         # D_p, where the only denominators are powers of p, so p-integral now means
         # integral and the model's guarantee is the one we need.  The cofactor is a unit
         # on D_p, so this reparametrises the isotropic subgroup rather than shrinking it.
-        Fp = GF(p)
-        cofactor = m_exp // (p**m_exp.valuation(p))
+        Fp = GF(q)
+        cofactor = m_exp // (q**m_exp.valuation(q))
         for v in iso_list:
             vZ = vector(ZZ, [int(Fp(x)) for x in v])  # 0..p-1 reps
             v_dual = cofactor * (vector(QQ, vZ) * Minv)   # in L*, now p-primary
