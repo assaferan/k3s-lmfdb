@@ -530,17 +530,26 @@ def is_overlattice(L1, L2):
     return all(c in ZZ for c in coords.list())
 
 def install_fast_maximal_overlattice():
-    """Substitute maximal_overlattice_2 for Sage's IntegralLattice.maximal_overlattice.
+    """DO NOT USE against real data: known to produce wrong answers.  See below.
 
+    Substitutes maximal_overlattice_2 for Sage's IntegralLattice.maximal_overlattice.
     Sage's representative() -- the census bottleneck (genus.py:623) -- spends ~63% of its
     time in maximal_overlattice, calling it directly and again once per prime inside
-    local_modification.  Substituting the single primitive therefore reaches both hot
-    spots and makes representative() ~1.47x faster without reimplementing it, leaving the
-    correctness-critical local_modification logic to Sage.
+    local_modification, so substituting the one primitive reaches both hot spots and makes
+    representative() ~1.47x faster without reimplementing it.
 
-    This MONKEY-PATCHES a Sage class, so it changes behaviour for every caller in the
-    process; that is why it is opt-in rather than done at import.  Returns the original
-    method so a caller can restore it.
+    That speedup is not usable.  A 184-case sweep of the patched representative() (rank
+    3-16, determinants 1-196, checked against Sage's own criterion Genus(rep) == genus)
+    found 2 genera where it returns the WRONG answer and 2 where it hangs, all inside
+    Sage's local_modification, which reacts badly to a maximal_overlattice that is correct
+    but different from its own.  maximal_overlattice_2 agrees with Sage 12/12 when called
+    directly, so the fault is in the substitution, not the algorithm -- but representative()
+    writes straight into the database, so a wrong genus is silent corruption that
+    null-scanning cannot see.
+
+    It also MONKEY-PATCHES a Sage class, changing behaviour for every caller in the
+    process, which is why it is opt-in rather than done at import.  Nothing calls it.
+    Returns the original method so a caller can restore it.
     """
     import sage.modules.free_quadratic_module_integer_symmetric as fqm
     cls = fqm.FreeQuadraticModule_integer_symmetric
