@@ -262,12 +262,16 @@ enumeration for definite genera of rank >= 3 (see GenusReps in genus_reps.m).}
     end if;
 
     if (#reps gt 0) then
-        // Budget for each lattice's own computations.  perlattice gives every lattice the
-        // same budget, so it does not shrink as the genus grows; the old
-        // timeout/#reps split a fixed budget across the representatives, which starved
-        // precisely the large genera (class number 55 at timeout 300 => 6s per lattice,
-        // against a measured 8-66s just for CanonicalForm at rank 12) and silently wrote
-        // the results as "\N".  Kept as the fallback when perlattice is 0.
+        // PER-OPERATION timeout, NOT a per-lattice aggregate: to_per_rep is passed
+        // independently to CanonicalForm, AutomorphismGroupFaster, the primal theta series
+        // and the dual theta series below, so a single lattice can spend up to ~4*to_per_rep
+        // (plus the unbounded Minimum/kissing work between them).  The aggregate wall-clock
+        // guard is the per-GENUS timelimit checked at the top of this loop, not this value.
+        // perlattice gives every operation the same budget regardless of class number; the
+        // old timeout/#reps split a fixed budget across the representatives, which starved
+        // precisely the large genera (class number 55 at timeout 300 => 6s per operation,
+        // against a measured 8-66s just for CanonicalForm at rank 12) and silently wrote the
+        // results as "\N".  Kept as the fallback when perlattice is 0.
         to_per_rep := (perlattice gt 0) select perlattice else timeout div #reps + 1;
     end if;
 

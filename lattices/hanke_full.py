@@ -161,20 +161,95 @@ def restrict_gram(M, basis_rows):
         return Matrix(F, 0, 0, [])
     return basis_rows * M * basis_rows.transpose()
 
-def find_isotrop_fp(M, max_trials=200):
+def _congruence_diagonalize(M):
+    """Return (D, P) with D = P*M*P^t diagonal, over an odd-characteristic field.
+
+    Symmetric Gaussian elimination: every row operation is mirrored by the same column
+    operation (that is what keeps it a congruence, D = P M P^t, rather than a similarity),
+    and accumulated in P.  Used by find_isotrop_fp to reduce isotropy to the diagonal case.
+    """
+    F = M.base_ring()
+    n = M.nrows()
+    A = copy(M)
+    P = identity_matrix(F, n)
+    for k in range(n):
+        if A[k, k] == 0:
+            piv = next((j for j in range(k + 1, n) if A[j, j] != 0), None)
+            if piv is not None:
+                A.swap_rows(k, piv); A.swap_columns(k, piv); P.swap_rows(k, piv)
+            else:
+                jj = next((j for j in range(k + 1, n) if A[k, j] != 0), None)
+                if jj is None:
+                    continue                      # row k is already zero from k on
+                A.add_multiple_of_row(k, jj, 1)
+                A.add_multiple_of_column(k, jj, 1)
+                P.add_multiple_of_row(k, jj, 1)
+        akk = A[k, k]
+        if akk == 0:
+            continue
+        for j in range(k + 1, n):
+            if A[j, k] != 0:
+                f = -A[j, k] / akk
+                A.add_multiple_of_row(j, k, f)
+                A.add_multiple_of_column(j, k, f)
+                P.add_multiple_of_row(j, k, f)
+    return A, P
+
+
+def find_isotrop_fp(M, max_trials=None):
+    """A deterministic isotropic vector for q(v) = v*M*v^t over F_p, or None if the form is
+    genuinely anisotropic.
+
+    Complete by construction: it never reports anisotropic when an isotropic vector exists.
+    The previous version sampled 200 random vectors and inferred anisotropy from failure,
+    which over a large prime silently misses the isotropic vector that is there --
+    maximal_overlattice_2(1009*A_2) returned det 3*1009^2 instead of 3, a non-maximal
+    lattice with no exception raised.  max_trials is accepted and ignored (signature compat).
+    """
     F = M.base_ring()
     n = M.nrows()
     V = VectorSpace(F, n)
+
     for i in range(n):
-        e = V.basis()[i]
-        if B_field(e, M) == F(0):
-            return e
-    for _ in range(max_trials):
-        a = V.random_element()
-        if a == V.zero():
-            continue
-        if B_field(a, M) == F(0):
-            return a
+        if M[i, i] == 0:
+            return V.gen(i)
+
+    if F.characteristic() == 2:
+        # Over F_2, q(v) = v*M*v^t = sum_i M_ii v_i is LINEAR (the cross terms 2*M_ij*v_i*v_j
+        # vanish and v_i^2 = v_i).  Every diagonal entry is nonzero here (the zero case
+        # returned above), so q(v) = sum_i v_i, and any weight-2 vector is isotropic.
+        return V.gen(0) + V.gen(1) if n >= 2 else None
+
+    # p odd: diagonalize, solve on the diagonal, map the solution back (x = y*P is isotropic
+    # for M whenever y is isotropic for D = P*M*P^t, since x*M*x^t = y*D*y^t).
+    D, P = _congruence_diagonalize(M)
+    d = [D[i, i] for i in range(n)]
+    for i in range(n):
+        if d[i] == 0:
+            return V.gen(i) * P
+    # a coordinate 2-plane <d_i, d_j> is isotropic iff -d_j/d_i is a square (then
+    # d_i*x^2 + d_j = 0 has a root); this settles every n = 2 case and many larger ones.
+    for i in range(n):
+        for j in range(i + 1, n):
+            r = (-d[j]) / d[i]
+            if r.is_square():
+                y = [F(0)] * n
+                y[i] = r.sqrt(); y[j] = F(1)
+                return V(y) * P
+    # n >= 3: the form is isotropic (any ternary form over F_p is), but possibly in no
+    # coordinate 2-plane.  Solve the ternary d0*x^2 + d1*y^2 = -d2 by pigeonhole: {d0*x^2}
+    # and {-d2 - d1*y^2} each hit (p+1)/2 values, so they meet.
+    if n >= 3:
+        a, b, c = d[0], d[1], d[2]
+        squares = {}
+        for x in F:
+            squares.setdefault(a * x * x, x)
+        for yv in F:
+            t = -c - b * yv * yv
+            if t in squares:
+                y = [F(0)] * n
+                y[0] = squares[t]; y[1] = yv; y[2] = F(1)
+                return V(y) * P
     return None
 
 def hyperbolic_fp(M):
@@ -569,11 +644,22 @@ def install_fast_maximal_overlattice():
 
     Correctness: a 184-case sweep of the patched representative() (rank 3-16, signatures
     definite and indefinite, determinants 1-196, checked against Sage's own criterion
-    Genus(rep) == genus) passes 184/184 -- no wrong answers, no hangs.  Getting there took
-    two fixes: algo3_8 was lifting a p-adic matrix through QQ (rational reconstruction turned
-    21 into -1/3, corrupting other primes), and max_isotrop_fp looped forever on H (+)
-    diag(1,1) over F_2 because it took a plane's complement in the full space instead of
-    within the current subspace.  Both are fixed; this was the substitution's only barrier.
+    Genus(rep) == genus) passes 184/184 -- no wrong answers, no hangs.  That sweep covers
+    only SMALL primes, though; three separate bugs were fixed to get the substitution
+    trustworthy, and the last two were found only after the sweep:
+      * algo3_8 lifted a p-adic matrix through QQ (rational reconstruction turned 21 into
+        -1/3, corrupting other primes);
+      * max_isotrop_fp looped forever on H (+) diag(1,1) over F_2 (it took a plane's
+        complement in the full space instead of within the current subspace);
+      * find_isotrop_fp searched for an isotropic vector by 200 RANDOM trials and inferred
+        anisotropy from failure -- complete for small primes, but over a large prime it
+        misses the vector that is there, so maximal_overlattice_2(1009*A_2) returned a
+        non-maximal det 3*1009^2 (Sage: 3) with no exception.  It is now deterministic
+        (diagonalize, solve the diagonal form exactly), so completeness no longer depends
+        on the prime.
+    The lesson the sweep taught: a small-determinant pass is not evidence of correctness at
+    large primes.  If this is ever wired into the live pipeline, extend the regression set
+    to large-prime and high-rank determinants first.
 
     Speed: a 40-genus benchmark (rank 8-24, det up to 32768) measured 1.64x overall, 1.30x
     to 2.52x per case, never slower -- biggest at low rank / high det, softening as rank
@@ -717,18 +803,26 @@ def maximal_overlattice_2(L_in, p=None, do_asserts=True):
     # on lattices it deliberately leaves odd, and even-ifying there changes the lattice at
     # 2 when only p was meant to move (at p=5 it returned the even sublattice, det 4, where
     # Sage gives det 1).
-    if p is None or p == 2:
-        L_sat = finish(L_sat)
+    saturated = L_sat                 # the saturate-and-adjoin result, before finish
+    did_finish = (p is None or p == 2)
+    if did_finish:
+        L_sat = finish(saturated)
     if do_asserts:
-        # Do NOT compare this against Sage's maximal_overlattice: they compute different
-        # things.  Sage returns the maximal EVEN overlattice ("Return a maximal even
-        # integral overlattice", free_quadratic_module_integer_symmetric.py:1032), while
-        # the isotropy condition used above is the one for the discriminant BILINEAR form
-        # (b(v,w) integral), which allows odd results.  At rank 12 det 100 Sage stops at
-        # det 4 (even, maximal among even overlattices) whereas this reaches det 1 (odd,
-        # unimodular).  Both are correct for their own notion; an earlier comparison read
-        # the difference as a correctness gap in this function, and it is not one.
-        assert is_overlattice(L_sat, ogL), "result is not an overlattice of the input"
+        # The saturation and class-adjoining phase only ever ENLARGES the lattice, so up to
+        # here the result is a genuine overlattice of the input.  Do NOT compare it against
+        # Sage's maximal_overlattice: they compute different things.  Sage returns the
+        # maximal EVEN overlattice, while the isotropy condition used above is the one for
+        # the discriminant BILINEAR form (b(v,w) integral), which allows odd results -- at
+        # rank 12 det 100 Sage stops at det 4 (even) whereas this reaches det 1 (odd).
+        assert is_overlattice(saturated, ogL), "saturation is not an overlattice of the input"
+        if did_finish:
+            # finish() (Hanke Sec. 4) restores EVENNESS: it returns the maximal a-even
+            # lattice in L's rational quadratic space, reached via an even 2-neighbour or,
+            # when none exists, the index-2 even sublattice.  A 2-neighbour is not an
+            # overlattice of L, and the even sublattice of an odd input is a SUBlattice --
+            # so evenness, not overlattice-ness, is the invariant here.  (This is the
+            # classical Z^6 no-neighbour case, which must return the even sublattice D_6.)
+            assert L_sat.is_even(), "finish() did not return an even lattice"
 
     return L_sat
 
