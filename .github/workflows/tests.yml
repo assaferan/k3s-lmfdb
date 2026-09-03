@@ -25,11 +25,20 @@ on:
 
   pull_request_target:
 
+  # The slow suites are excluded from push/PR runs (see set-matrix below) --
+  # test_l12a_plus alone takes ~2h23m. These two triggers are how they still
+  # get run: on demand, and once a week.
+  workflow_dispatch:
+
+  schedule:
+    - cron: '0 5 * * 0'   # Sundays 05:00 UTC
+
 jobs:
 
-  # Enumerate suites so each gets its own job: the slow ones (test_brandhorst,
-  # test_l12a_plus -- see SLOW_SUITES in tests/run.sh) then run concurrently
-  # with the fast ones instead of serialising behind them.
+  # Enumerate suites so each gets its own job, running concurrently instead of
+  # serialising. On push/PR the slow suites are dropped (test_l12a_plus is
+  # ~2h23m, test_brandhorst ~4m, against ~18s for all eight others); they run
+  # on workflow_dispatch and on the weekly schedule instead.
   # tests/assertions.m is a helper, not a suite, and does not match test_*.m.
   matrix:
     runs-on: ubuntu-latest
@@ -46,10 +55,31 @@ jobs:
 
       - id: set-matrix
         run: |
+          suites=$(ls -1 lattices/tests/test_*.m | xargs -n1 basename | sed 's/\.m$//')
+
+          # SLOW_SUITES is defined in tests/run.sh; parse it rather than repeat
+          # it here, so the local runner and CI cannot disagree about which
+          # suites are slow.
+          sed -n 's/^SLOW_SUITES="\(.*\)"$/\1/p' lattices/tests/run.sh \
+            | tr ' ' '\n' | grep -v '^$' > /tmp/slow_suites.txt
+          echo "slow suites:"; cat /tmp/slow_suites.txt
+
+          case "${{ github.event_name }}" in
+            push|pull_request_target)
+              suites=$(printf '%s\n' "$suites" | grep -vxF -f /tmp/slow_suites.txt || true)
+              echo "push/PR event: excluding the slow suites" ;;
+            *)
+              echo "${{ github.event_name }} event: running every suite" ;;
+          esac
+
+          if [ -z "$suites" ]; then
+            echo "::error::no test suites selected"
+            exit 1
+          fi
+
           matrix=$( (
             echo '{ "target" : ['
-            ls -1 lattices/tests/test_*.m | xargs -n1 basename | sed 's/\.m$//' \
-              | sed -r 's/^(.*)$/"\1"/' | paste -sd "," -
+            printf '%s\n' "$suites" | sed -r 's/^(.*)$/"\1"/' | paste -sd "," -
             echo " ]}"
           ) | jq -c . )
           echo "$matrix" | jq .
