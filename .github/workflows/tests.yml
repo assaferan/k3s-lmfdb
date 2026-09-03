@@ -131,9 +131,16 @@ jobs:
           # Bounded timeout so a stalled connection fails fast instead of
           # hanging, with backoff retries. --no-verbose (not --quiet) keeps the
           # actual wget error in the log.
+          # Basic auth only when a username is actually set. Sibling repos
+          # (ModFrmGL2, hilbertmodularforms) point MAGMA_URL at a location
+          # that needs no credentials -- the URL is secret, not protected --
+          # so passing empty --user/--password there would be wrong.
+          auth=()
+          if [ -n "${MAGMA_USERNAME:-}" ]; then
+            auth=(--user="$MAGMA_USERNAME" --password="$MAGMA_PASSWORD")
+          fi
           for attempt in 1 2 3 4 5; do
-            if wget "$MAGMA_URL" -O magma.tar.gz \
-                 --user="$MAGMA_USERNAME" --password="$MAGMA_PASSWORD" \
+            if wget "$MAGMA_URL" -O magma.tar.gz "${auth[@]}" \
                  --timeout=120 --tries=3 --waitretry=30 --retry-connrefused --no-verbose; then
               if tar xf magma.tar.gz; then break; fi
             fi
@@ -210,9 +217,16 @@ jobs:
         if: steps.magmacache.outputs.cache-hit != 'true'
         run: |
           # Fallback: normally skipped because prime-magma warmed the cache.
+          # Basic auth only when a username is actually set. Sibling repos
+          # (ModFrmGL2, hilbertmodularforms) point MAGMA_URL at a location
+          # that needs no credentials -- the URL is secret, not protected --
+          # so passing empty --user/--password there would be wrong.
+          auth=()
+          if [ -n "${MAGMA_USERNAME:-}" ]; then
+            auth=(--user="$MAGMA_USERNAME" --password="$MAGMA_PASSWORD")
+          fi
           for attempt in 1 2 3 4 5; do
-            if wget "$MAGMA_URL" -O magma.tar.gz \
-                 --user="$MAGMA_USERNAME" --password="$MAGMA_PASSWORD" \
+            if wget "$MAGMA_URL" -O magma.tar.gz "${auth[@]}" \
                  --timeout=120 --tries=3 --waitretry=30 --retry-connrefused --no-verbose; then
               if tar xf magma.tar.gz; then break; fi
             fi
