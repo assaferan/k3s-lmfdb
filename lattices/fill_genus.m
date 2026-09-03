@@ -349,9 +349,17 @@ enumeration for definite genera of rank >= 3 (see GenusReps in genus_reps.m).}
         if (n eq s) then
             vprintf FillGenus, 1 : "%o", gram;
             // The automorphism group and dual must be expressed in the same basis as
-            // the stored gram (ConnectGenus rebuilds the lattice from that gram); once
-            // the gram is canonicalised below, Lcanon holds the canonical lattice.
-            Lcanon := L;
+            // the stored gram (ConnectGenus rebuilds the lattice from that gram, and
+            // reuses lat["aut_group"] unchanged against it -- see VoronoiData/
+            // AutOrbitCoords/tDesign in connect_genus.m). Lcanon must therefore start
+            // out matching lat["gram"] (= gram, LLL-reduced above), NOT L (gram0's
+            // basis) -- gram0 and gram can differ by a basis change LLLGram picked,
+            // in which case an automorphism group computed on L would not preserve
+            // gram at all (confirmed: on a scrambled-basis E8 test case, ALL of its
+            // generators failed to preserve the stored gram). If CanonicalForm below
+            // succeeds, Lcanon and lat["gram"] both get overwritten together to the
+            // canonical lattice, staying in sync the same way.
+            Lcanon := LatticeWithGram(gram);
             success, canonical_gram, elapsed := TimeoutCall(to_per_rep, CanonicalForm, <gram>, 1);
             vprintf FillGenus, 1 : "Canonical form computed in %o seconds\n", elapsed;
             if success then
