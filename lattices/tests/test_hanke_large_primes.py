@@ -35,12 +35,16 @@ from sage.quadratic_forms.genera.genus import Genus
 from hanke_full import maximal_overlattice_2
 
 # Small named lattices, not a systematic rank sweep -- enough spread (rank
-# 1, 2, 4) to see the bug isn't rank-specific, cheap enough that Sage's
+# 1, 2, 4, 8) to see the bug isn't rank-specific, cheap enough that Sage's
 # own maximal_overlattice finishes quickly even at det ~ p^2 * base_det.
+# E8 (rank 8, det 1) is here specifically because the small-prime sweep's
+# rank 3-16 coverage was never combined with a large prime -- wiring this
+# into the live pipeline needs both, not either alone.
 BASE_LATTICES = {
     "A1": matrix(ZZ, [[2]]),
     "A2": matrix(ZZ, [[2, 1], [1, 2]]),
     "D4": matrix(ZZ, [[2, 0, 1, 0], [0, 2, 1, 0], [1, 1, 2, 1], [0, 0, 1, 2]]),
+    "E8": IntegralLattice("E8").gram_matrix(),
 }
 
 # 1009 is the documented failure. 97 and 10007 bracket it (one below,
