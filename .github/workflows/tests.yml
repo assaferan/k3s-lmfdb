@@ -45,8 +45,11 @@ jobs:
     outputs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
     steps:
+      # Every event except pull_request_target checks out the triggering ref
+      # (the default branch for schedule). Gating this on `push` alone left
+      # schedule and workflow_dispatch runs with an empty workspace.
       - uses: actions/checkout@v4
-        if: ${{ github.event_name == 'push' }}
+        if: ${{ github.event_name != 'pull_request_target' }}
 
       - uses: actions/checkout@v4
         if: ${{ github.event_name == 'pull_request_target' }}
@@ -185,9 +188,9 @@ jobs:
           echo "Sorry! Your permissions are insufficient."
           false
 
-      - name: Checkout for a push event
+      - name: Checkout for push, schedule and workflow_dispatch
         uses: actions/checkout@v4
-        if: ${{ github.event_name == 'push' }}
+        if: ${{ github.event_name != 'pull_request_target' }}
         with:
           submodules: recursive
 
