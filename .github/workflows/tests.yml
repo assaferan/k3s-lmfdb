@@ -26,8 +26,8 @@ on:
   pull_request_target:
 
   # The slow suites are excluded from push/PR runs (see set-matrix below) --
-  # test_l12a_plus alone takes ~2h23m. These two triggers are how they still
-  # get run: on demand, and once a week.
+  # test_l12a_plus alone takes ~4h20m on a hosted runner. These two triggers
+  # are how they still get run: on demand, and once a week.
   workflow_dispatch:
 
   schedule:
@@ -36,17 +36,22 @@ on:
 jobs:
 
   # Enumerate suites so each gets its own job, running concurrently instead of
-  # serialising. On push/PR the slow suites are dropped (test_l12a_plus is
-  # ~2h23m, test_brandhorst ~4m, against ~18s for all eight others); they run
-  # on workflow_dispatch and on the weekly schedule instead.
+  # serialising. On push/PR the slow suites are dropped; they run on
+  # workflow_dispatch and on the weekly schedule instead. Measured on
+  # ubuntu-latest (run 42483449415, 2026-11-08): test_l12a_plus 15666s
+  # (~4h21m), test_brandhorst 327s, every other suite 22-44s. Hosted runners
+  # are ~1.8x slower than the 2026-09-03 local timings in tests/run.sh.
   # tests/assertions.m is a helper, not a suite, and does not match test_*.m.
   matrix:
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
     steps:
+      # Every event except pull_request_target checks out the triggering ref
+      # (the default branch for schedule). Gating this on `push` alone left
+      # schedule and workflow_dispatch runs with an empty workspace.
       - uses: actions/checkout@v4
-        if: ${{ github.event_name == 'push' }}
+        if: ${{ github.event_name != 'pull_request_target' }}
 
       - uses: actions/checkout@v4
         if: ${{ github.event_name == 'pull_request_target' }}
@@ -142,6 +147,13 @@ jobs:
           for attempt in 1 2 3 4 5; do
             if wget "$MAGMA_URL" -O magma.tar.gz "${auth[@]}" \
                  --timeout=120 --tries=3 --waitretry=30 --retry-connrefused --no-verbose; then
+              # A wrong MAGMA_URL (a download page or directory index) still
+              # returns 200 with a small HTML body. That is a configuration
+              # error, not a flaky connection, so fail now instead of retrying.
+              if ! gzip -t magma.tar.gz 2>/dev/null; then
+                echo "::error::download is not a gzip archive ($(stat -c %s magma.tar.gz) bytes, $(file -b magma.tar.gz | cut -c1-60)); check that MAGMA_URL points at the tarball itself"
+                exit 1
+              fi
               if tar xf magma.tar.gz; then break; fi
             fi
             echo "::warning::magma download/extract attempt $attempt failed; backing off $((attempt*30))s"
@@ -156,9 +168,10 @@ jobs:
     needs: [has_access, matrix, prime-magma]
     if: needs.has_access.outputs.has_access == 'true'
 
-    # The slow suites (test_brandhorst, test_l12a_plus) can run for several
-    # minutes; the default 360-minute ceiling is GitHub's hard job limit, so a
-    # suite that exceeds it needs to be run locally rather than here.
+    # 360 minutes is GitHub's hard ceiling for a hosted job, so this cannot
+    # usefully be raised. test_l12a_plus takes ~261 of these 350 minutes on
+    # a hosted runner (2026-11-08); if it creeps past the limit it has to be
+    # split or run locally rather than here.
     timeout-minutes: 350
 
     strategy:
@@ -185,9 +198,9 @@ jobs:
           echo "Sorry! Your permissions are insufficient."
           false
 
-      - name: Checkout for a push event
+      - name: Checkout for push, schedule and workflow_dispatch
         uses: actions/checkout@v4
-        if: ${{ github.event_name == 'push' }}
+        if: ${{ github.event_name != 'pull_request_target' }}
         with:
           submodules: recursive
 
@@ -228,6 +241,13 @@ jobs:
           for attempt in 1 2 3 4 5; do
             if wget "$MAGMA_URL" -O magma.tar.gz "${auth[@]}" \
                  --timeout=120 --tries=3 --waitretry=30 --retry-connrefused --no-verbose; then
+              # A wrong MAGMA_URL (a download page or directory index) still
+              # returns 200 with a small HTML body. That is a configuration
+              # error, not a flaky connection, so fail now instead of retrying.
+              if ! gzip -t magma.tar.gz 2>/dev/null; then
+                echo "::error::download is not a gzip archive ($(stat -c %s magma.tar.gz) bytes, $(file -b magma.tar.gz | cut -c1-60)); check that MAGMA_URL points at the tarball itself"
+                exit 1
+              fi
               if tar xf magma.tar.gz; then break; fi
             fi
             echo "::warning::magma download/extract attempt $attempt failed; backing off $((attempt*30))s"
