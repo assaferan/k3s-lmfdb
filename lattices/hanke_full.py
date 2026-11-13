@@ -424,7 +424,7 @@ def Z_span_basis(gens):
 def p_neighbor_lattice(L_in, w, p=2):
     G = L_in.gram_matrix()
 
-    perp_basis = L_perp_mod2_basis(G, w)    
+    perp_basis = L_perp_mod2_basis(G, w)
 
     gens = [vector(QQ, w) / p] + [vector(QQ, v) for v in perp_basis]
     # B = Z_span_basis(gens)
@@ -435,7 +435,17 @@ def p_neighbor_lattice(L_in, w, p=2):
     B = hnf_int / mat.denominator()
     Gprime = B * G * B.transpose()
 
-    return IntegralLattice(Gprime)
+    # B's rows are the neighbour's basis in L_in's OWN coordinates. Composing with
+    # L_in.basis_matrix() re-expresses them in L_in's ambient space, so the neighbour
+    # stays embedded there instead of in a fresh, disconnected ambient -- which is what
+    # IntegralLattice(Gprime) alone would give (same fix even_sublattice already applies
+    # via its own "B * L.basis_matrix()"). A caller that combines this lattice with
+    # another via real ambient coordinates -- e.g. local_modification, reached through
+    # maximal_overlattice_2's p=2 path via finish() -- needs that shared embedding;
+    # without it, local_modification's own consistency check ("oops") catches the result
+    # only downstream, in a completely different function.
+    B_ambient = B * L_in.basis_matrix()
+    return IntegralLattice(L_in.inner_product_matrix(), B_ambient)
 
 def even_sublattice(L):
     G = L.gram_matrix()

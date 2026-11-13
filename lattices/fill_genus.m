@@ -349,9 +349,17 @@ enumeration for definite genera of rank >= 3 (see GenusReps in genus_reps.m).}
         if (n eq s) then
             vprintf FillGenus, 1 : "%o", gram;
             // The automorphism group and dual must be expressed in the same basis as
-            // the stored gram (ConnectGenus rebuilds the lattice from that gram); once
-            // the gram is canonicalised below, Lcanon holds the canonical lattice.
-            Lcanon := L;
+            // the stored gram (ConnectGenus rebuilds the lattice from that gram, and
+            // reuses lat["aut_group"] unchanged against it -- see VoronoiData/
+            // AutOrbitCoords/tDesign in connect_genus.m). Lcanon must therefore start
+            // out matching lat["gram"] (= gram, LLL-reduced above), NOT L (gram0's
+            // basis) -- gram0 and gram can differ by a basis change LLLGram picked,
+            // in which case an automorphism group computed on L would not preserve
+            // gram at all (confirmed: on a scrambled-basis E8 test case, ALL of its
+            // generators failed to preserve the stored gram). If CanonicalForm below
+            // succeeds, Lcanon and lat["gram"] both get overwritten together to the
+            // canonical lattice, staying in sync the same way.
+            Lcanon := LatticeWithGram(gram);
             success, canonical_gram, elapsed := TimeoutCall(to_per_rep, CanonicalForm, <gram>, 1);
             vprintf FillGenus, 1 : "Canonical form computed in %o seconds\n", elapsed;
             if success then
@@ -405,30 +413,18 @@ enumeration for definite genera of rank >= 3 (see GenusReps in genus_reps.m).}
             if theta_prec gt 0 then
                 lat["theta_series"] := theta;
                 lat["theta_prec"] := theta_prec;
-                if lat["is_even"] eq "T" then
-                    lat["is_universal"] := false;
-                    lat["is_even_universal"] := "\\N";
-                    // 15 theorem
-                    for m in [2..Min(30,#theta-1) by 2] do
-                        if theta[m+1] eq 0 then
-                            lat["is_even_universal"] := false;
-                            break;
-                        end if;
-                    end for;
-                    if lat["is_even_universal"] cmpeq "\\N" and #theta ge 31 then
-                        lat["is_even_universal"] := true;
-                    end if;
-                else
-                    // 290 theorem
-                    for m in [1..Min(290,#theta-1)] do
-                        if theta[m+1] eq 0 then
-                            lat["is_universal"] := false;
-                            break;
-                        end if;
-                    end for;
-                    if lat["is_universal"] cmpeq "\\N" and #theta ge 291 then
-                        lat["is_universal"] := true;
-                    end if;
+                // 15-theorem for is_universal, doubled 290-theorem for
+                // is_even_universal (sources, and why 2*S290 is needed even for odd
+                // lattices, in universality.m).  The previous scan certified
+                // is_even_universal from theta support on 2..30, which is only valid
+                // for doubly even lattices.  Norms beyond theta_prec are checked by
+                // a TimeoutCall-guarded first-vector search; undecided stays "\N".
+                udec, uval, eudec, euval := UniversalityFlags(L : Theta := theta);
+                if udec then
+                    lat["is_universal"] := uval;
+                end if;
+                if eudec then
+                    lat["is_even_universal"] := euval;
                 end if;
             else
                 lat["theta_series"] := [1];
