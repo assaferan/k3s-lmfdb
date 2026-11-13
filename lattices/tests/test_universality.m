@@ -58,8 +58,13 @@ AssertEqual(~results, <udef, uval, uproved>, <true, 1, true>, "universality [1,1
 
 // E8 perp I8 represents S8 = {I8, E8}, hence is 8-universal (Oh); it cannot be
 // 9-universal because its only norm-1 axes are the eight in the I8 factor, so the
-// I9 witness fails and the value is decided to be exactly 8
-udef, uval, uproved := LatticeUniversalityData(DirectSum(E8, StandardLattice(8)));
+// I9 witness fails and the value is decided to be exactly 8.  Proving that I9 does
+// not embed is an exhaustive search: ~58s CPU on Magma 2.30 locally, but past the
+// default 120s MaxSeconds on a GitHub runner with 2.29, where it comes back
+// undecided and the value stays 8 unproved.  That is the intended behaviour on a
+// slow machine, so give this case enough budget to test the proof, not the clock.
+udef, uval, uproved := LatticeUniversalityData(DirectSum(E8, StandardLattice(8))
+                                               : MaxSeconds := 1200, TotalSeconds := 1800);
 AssertEqual(~results, <udef, uval, uproved>, <true, 8, true>, "universality E8 + I8");
 
 // ---- even_universality

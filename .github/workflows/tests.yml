@@ -26,8 +26,8 @@ on:
   pull_request_target:
 
   # The slow suites are excluded from push/PR runs (see set-matrix below) --
-  # test_l12a_plus alone takes ~2h23m. These two triggers are how they still
-  # get run: on demand, and once a week.
+  # test_l12a_plus alone takes ~4h20m on a hosted runner. These two triggers
+  # are how they still get run: on demand, and once a week.
   workflow_dispatch:
 
   schedule:
@@ -36,22 +36,55 @@ on:
 jobs:
 
   # Enumerate suites so each gets its own job, running concurrently instead of
-  # serialising. On push/PR the slow suites are dropped (test_l12a_plus is
-  # ~2h23m, test_brandhorst ~4m, against ~18s for all eight others); they run
-  # on workflow_dispatch and on the weekly schedule instead.
+  # serialising. On push/PR the slow suites are dropped; they run on
+  # workflow_dispatch and on the weekly schedule instead. Measured on
+  # ubuntu-latest (run 42483449415, 2026-11-08): test_l12a_plus 15666s
+  # (~4h21m), test_brandhorst 327s, every other suite 22-44s. Hosted runners
+  # are ~1.8x slower than the 2026-09-03 local timings in tests/run.sh.
   # tests/assertions.m is a helper, not a suite, and does not match test_*.m.
   matrix:
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
     steps:
+      # SECURITY: pull_request_target runs with this repository's secrets and a
+      # write-capable GITHUB_TOKEN while the checkout below fetches the PR head
+      # -- i.e. code from a fork. This gate is the only thing stopping an
+      # arbitrary fork PR from exfiltrating the Magma credentials or the token,
+      # so do not remove it or move it after the checkout. It checks the PR
+      # *author*, not github.actor: a maintainer re-running an outsider's PR
+      # must not let that PR through. It is inline rather than a third-party
+      # action so nothing unpinned runs ahead of it with the token.
+      - name: Require write access from the PR author
+        if: ${{ github.event_name == 'pull_request_target' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          AUTHOR: ${{ github.event.pull_request.user.login }}
+          REPO: ${{ github.repository }}
+        run: |
+          perm=$(gh api "repos/$REPO/collaborators/$AUTHOR/permission" --jq .permission)
+          echo "PR author $AUTHOR has '$perm' access to $REPO"
+          case "$perm" in
+            admin|maintain|write) ;;
+            *) echo "::error::PR code only runs for authors with write access to $REPO"; exit 1 ;;
+          esac
+
+      # Every event except pull_request_target checks out the triggering ref
+      # (the default branch for schedule). Gating this on `push` alone left
+      # schedule and workflow_dispatch runs with an empty workspace.
       - uses: actions/checkout@v4
-        if: ${{ github.event_name == 'push' }}
+        if: ${{ github.event_name != 'pull_request_target' }}
 
       - uses: actions/checkout@v4
         if: ${{ github.event_name == 'pull_request_target' }}
         with:
           ref: ${{ github.event.pull_request.head.sha }}
+          # actions/checkout refuses a fork's head under pull_request_target
+          # unless told otherwise; the gate above is what makes this acceptable.
+          # persist-credentials: false keeps the token out of .git/config, where
+          # the PR's own code could read it.
+          allow-unsafe-pr-checkout: true
+          persist-credentials: false
 
       - id: set-matrix
         run: |
@@ -142,6 +175,13 @@ jobs:
           for attempt in 1 2 3 4 5; do
             if wget "$MAGMA_URL" -O magma.tar.gz "${auth[@]}" \
                  --timeout=120 --tries=3 --waitretry=30 --retry-connrefused --no-verbose; then
+              # A wrong MAGMA_URL (a download page or directory index) still
+              # returns 200 with a small HTML body. That is a configuration
+              # error, not a flaky connection, so fail now instead of retrying.
+              if ! gzip -t magma.tar.gz 2>/dev/null; then
+                echo "::error::download is not a gzip archive ($(stat -c %s magma.tar.gz) bytes, $(file -b magma.tar.gz | cut -c1-60)); check that MAGMA_URL points at the tarball itself"
+                exit 1
+              fi
               if tar xf magma.tar.gz; then break; fi
             fi
             echo "::warning::magma download/extract attempt $attempt failed; backing off $((attempt*30))s"
@@ -156,9 +196,10 @@ jobs:
     needs: [has_access, matrix, prime-magma]
     if: needs.has_access.outputs.has_access == 'true'
 
-    # The slow suites (test_brandhorst, test_l12a_plus) can run for several
-    # minutes; the default 360-minute ceiling is GitHub's hard job limit, so a
-    # suite that exceeds it needs to be run locally rather than here.
+    # 360 minutes is GitHub's hard ceiling for a hosted job, so this cannot
+    # usefully be raised. test_l12a_plus takes ~261 of these 350 minutes on
+    # a hosted runner (2026-11-08); if it creeps past the limit it has to be
+    # split or run locally rather than here.
     timeout-minutes: 350
 
     strategy:
@@ -166,28 +207,31 @@ jobs:
       matrix: ${{ fromJson(needs.matrix.outputs.matrix) }}
 
     steps:
-      # SECURITY: pull_request_target runs with this repository's secrets while
-      # checking out the PR head below -- i.e. untrusted code with access to the
-      # Magma credentials. This permission gate is the only thing preventing an
-      # arbitrary fork PR from exfiltrating them. Do not remove it, and do not
-      # move it after the checkout.
-      - name: Check user permission
-        id: check
-        uses: scherermichael-oss/action-has-permission@master
-        with:
-          required-permission: write
+      # SECURITY: pull_request_target runs with this repository's secrets and a
+      # write-capable GITHUB_TOKEN while the checkout below fetches the PR head
+      # -- i.e. code from a fork. This gate is the only thing stopping an
+      # arbitrary fork PR from exfiltrating the Magma credentials or the token,
+      # so do not remove it or move it after the checkout. It checks the PR
+      # *author*, not github.actor: a maintainer re-running an outsider's PR
+      # must not let that PR through. It is inline rather than a third-party
+      # action so nothing unpinned runs ahead of it with the token.
+      - name: Require write access from the PR author
+        if: ${{ github.event_name == 'pull_request_target' }}
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Stop workflow for users with no write access
-        if: "! steps.check.outputs.has-permission"
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          AUTHOR: ${{ github.event.pull_request.user.login }}
+          REPO: ${{ github.repository }}
         run: |
-          echo "Sorry! Your permissions are insufficient."
-          false
+          perm=$(gh api "repos/$REPO/collaborators/$AUTHOR/permission" --jq .permission)
+          echo "PR author $AUTHOR has '$perm' access to $REPO"
+          case "$perm" in
+            admin|maintain|write) ;;
+            *) echo "::error::PR code only runs for authors with write access to $REPO"; exit 1 ;;
+          esac
 
-      - name: Checkout for a push event
+      - name: Checkout for push, schedule and workflow_dispatch
         uses: actions/checkout@v4
-        if: ${{ github.event_name == 'push' }}
+        if: ${{ github.event_name != 'pull_request_target' }}
         with:
           submodules: recursive
 
@@ -197,6 +241,12 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           submodules: recursive
+          # actions/checkout refuses a fork's head under pull_request_target
+          # unless told otherwise; the gate above is what makes this acceptable.
+          # persist-credentials: false keeps the token out of .git/config, where
+          # the PR's own code could read it.
+          allow-unsafe-pr-checkout: true
+          persist-credentials: false
 
       - name: Cache magma
         uses: actions/cache@v4
@@ -228,6 +278,13 @@ jobs:
           for attempt in 1 2 3 4 5; do
             if wget "$MAGMA_URL" -O magma.tar.gz "${auth[@]}" \
                  --timeout=120 --tries=3 --waitretry=30 --retry-connrefused --no-verbose; then
+              # A wrong MAGMA_URL (a download page or directory index) still
+              # returns 200 with a small HTML body. That is a configuration
+              # error, not a flaky connection, so fail now instead of retrying.
+              if ! gzip -t magma.tar.gz 2>/dev/null; then
+                echo "::error::download is not a gzip archive ($(stat -c %s magma.tar.gz) bytes, $(file -b magma.tar.gz | cut -c1-60)); check that MAGMA_URL points at the tarball itself"
+                exit 1
+              fi
               if tar xf magma.tar.gz; then break; fi
             fi
             echo "::warning::magma download/extract attempt $attempt failed; backing off $((attempt*30))s"
