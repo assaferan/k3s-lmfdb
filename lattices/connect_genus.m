@@ -181,6 +181,12 @@ intrinsic LabelPath(folder::MonStgElt, label::MonStgElt : Create := false) -> Mo
     return LabelPath(folder, rank, nplus, label : Create := Create);
 end intrinsic;
 
+function aut_preserves_gram(A, L)
+    G := ChangeRing(GramMatrix(L), Rationals());
+    return forall{g : g in Generators(A) |
+                  h * G * Transpose(h) eq G where h := ChangeRing(g, Rationals())};
+end function;
+
 intrinsic AutOrbits(L::Lat, A::GrpMat, vecs::SeqEnum) -> SeqEnum
 {Given a lattice L, an automorphism group A of L and a sequence of vectors which is invariant under the action of A (which could be LatElts or ModTupFldElts), return orbit representatives for the action of A on vecs}
     // This assumes A is in GL_n(Z), with respect to the basis of the lattice
@@ -767,6 +773,17 @@ two-pass connect in run_all.py).}
     if #lats gt 0 then
         to_per_rep := timeout div #lats + 1;
     end if;
+    // Theta coefficient lists for every class in the genus: the rank-1 regularity
+    // scan needs all classmates at once, and the universality ladder reuses the
+    // stored series instead of recomputing them.
+    genus_thetas := [];
+    if definite then
+        theta_col := Index(basic_format, "theta_series");
+        for j in [1..#lats] do
+            pieces := Split(Split(Read(LabelPath("lattice_basic_data", lats[j]["label"])), "\n")[1], "|");
+            Append(~genus_thetas, [Integers() | StringToInteger(x) : x in ParsePGList(pieces[theta_col])]);
+        end for;
+    end if;
 
     for i in [1..#lats] do
         lat := lats[i];
@@ -800,13 +817,146 @@ two-pass connect in run_all.py).}
         // dual_theta_series / dual_theta_prec are computed and stored in FillGenus
         // (lat_basic.format), so they are not recomputed here.
 
-        lat["is_regular"] := "\\N";
-        lat["universality"] := "\\N";
-        lat["even_universality"] := "\\N";
-        lat["regularity"] := "\\N";
+        // Criterion-set layer of universality/regularity (definite only); the
+        // db-relative layer runs once the Oscar embedding stage has produced
+        // lat_inclusions (oscar/INTEGRATION_PLAN.md section 10).  Values the
+        // intrinsics cannot decide keep the "\N" defaults set above.
+        if definite then
+            // The stored automorphism group lets the embedding searches collapse
+            // their top level to orbits.  A group that does not preserve L's gram
+            // would make orbit_reps drop genuine shell vectors and could turn an
+            // incomplete search into a false non-embedding certificate.  FillGenus
+            // before 9882be0 stored such a group whenever CanonicalForm timed out,
+            // and connect can run over that older fill output, so check the frame
+            // here; the fallback is a recomputation inside LatticeUniversalityData.
+            autg := 0;
+            if lat["aut_group"] ne "\\N" then
+                try
+                    autg := StringToGroup(lat["aut_group"]);
+                catch e
+                    autg := 0;
+                end try;
+                if Type(autg) eq GrpMat and not aut_preserves_gram(autg, L) then
+                    autg := 0;
+                end if;
+            end if;
+            udef, uval, uproved, eudef, euval, euproved :=
+                LatticeUniversalityData(L : Theta := genus_thetas[i], Aut := autg,
+                                        TotalSeconds := Max(60, to_per_rep));
+            if udef then
+                lat["universality"] := uval;
+                lat["universality_proved"] := uproved;
+            end if;
+            if eudef then
+                lat["even_universality"] := euval;
+                lat["even_universality_proved"] := euproved;
+            end if;
+            if #lats eq 1 then
+                // genus-representation means representation by some class, so a
+                // class number 1 lattice is regular at every rank up to its own
+                lat["is_regular"] := true;
+                lat["regularity"] := n;
+                lat["regularity_proved"] := true;
+            else
+                wit := RankOneIrregularityWitness(genus_thetas, i);
+                if wit gt 0 then
+                    lat["is_regular"] := false;
+                    lat["regularity"] := 0;
+                    lat["regularity_proved"] := true;
+                else
+                    // No counterexample within the common theta precision.  With
+                    // decent precision that is good heuristic evidence of rank-1
+                    // regularity; the closure pass over lat_inclusions refines the
+                    // value upward and RepresentsLattice exhaustions can prove it.
+                    B := Min([#t : t in genus_thetas]) - 1;
+                    if B ge 100 then
+                        lat["is_regular"] := true;
+                        lat["regularity"] := 1;
+                        lat["regularity_proved"] := false;
+                    end if;
+                end if;
+            end if;
 
-        // TODO (David): use theta series to guess is_regular
-        // TODO (David): use embedding data to compute universality, even_universality, regularity
+            // Embedding-poset sidecar, written by run_all's refine step from
+            // lat_inclusions (oscar/refine_universality.py): db-relative heuristic
+            // raises, certified universality upper bounds, and regularity candidate
+            // counterexamples.  Certificate-proven candidates ("p") apply directly;
+            // unresolved ones ("u") get a budgeted RepresentsLattice exhaustion here,
+            // where the lattice and its automorphism group are already in hand.
+            // proved = true values from the criterion layer are never overwritten.
+            sc := LabelPath("refine_sidecar", lat["label"]);
+            if OpenTest(sc, "r") then
+                scf := SplitPipe(Split(Read(sc), "\n")[1]);   // empties preserved (cands may be empty)
+                // label|db_universality|db_even_universality|db_regularity|universality_upper|cands
+                for pair in [<"universality", 2>, <"even_universality", 3>, <"regularity", 4>] do
+                    col := pair[1];
+                    dbv := StringToInteger(scf[pair[2]]);
+                    if dbv ge 1 and lat[col * "_proved"] cmpne true then
+                        cur := lat[col] cmpeq "\\N" select -1 else lat[col];
+                        if dbv gt cur then
+                            lat[col] := dbv;
+                            lat[col * "_proved"] := false;
+                            if col eq "regularity" then
+                                lat["is_regular"] := true;
+                            end if;
+                        end if;
+                    end if;
+                end for;
+                if scf[5] ne "\\N" and lat["universality_proved"] cmpne true then
+                    // provably not uu-universal (certified-complete slice with a
+                    // certified missing source): cap the value; it becomes proved
+                    // when the cap meets a proven lower bound (0 needs nothing,
+                    // 1 needs the 15-theorem flag)
+                    uu := StringToInteger(scf[5]);
+                    cur := lat["universality"] cmpeq "\\N" select uu - 1 else lat["universality"];
+                    newv := Max(Min(cur, uu - 1), 0);
+                    lat["universality"] := newv;
+                    if newv eq 0 or (newv eq 1 and lat["is_universal"] eq "true") then
+                        lat["universality_proved"] := true;
+                    else
+                        lat["universality_proved"] := false;
+                    end if;
+                end if;
+                if #scf ge 6 and #scf[6] gt 0 then
+                    minpn := 0;         // smallest n with a proven/confirmed missing source
+                    confirmations := 0;
+                    for centry in Split(scf[6], ";") do
+                        if minpn gt 0 then break; end if;     // entries sorted by n
+                        cp := Split(centry, ",");
+                        cn := StringToInteger(cp[1]);
+                        if cp[3] eq "p" then
+                            minpn := cn;
+                        elif confirmations lt 3 then
+                            confirmations +:= 1;
+                            Mrec := Split(Split(Read(LabelPath("lattice_basic_data", cp[2])), "\n")[1], "|");
+                            ML := GramStringToLat(Mrec[Index(basic_format, "gram")],
+                                                  StringToInteger(Split(cp[2], ".")[1]));
+                            cdec, crep := RepresentsLattice(L, ML : Aut := autg,
+                                                            MaxSeconds := 30, MaxNodes := 2000000);
+                            if cdec and not crep then
+                                minpn := cn;
+                            elif cdec and crep then
+                                vprintf ConnectGenus, 1 : "closure gap: %o does embed in %o\n",
+                                        cp[2], lat["label"];
+                            end if;
+                        end if;
+                    end for;
+                    if minpn gt 0 and lat["regularity_proved"] cmpne true then
+                        // a lattice its genus represents provably does not embed:
+                        // not minpn-regular
+                        if minpn eq 1 then
+                            lat["is_regular"] := false;
+                            lat["regularity"] := 0;
+                            lat["regularity_proved"] := true;
+                        else
+                            cur := lat["regularity"] cmpeq "\\N" select minpn - 1 else lat["regularity"];
+                            lat["regularity"] := Min(cur, minpn - 1);
+                            lat["regularity_proved"] := false;
+                        end if;
+                    end if;
+                end if;
+            end if;
+        end if;
 
         if scale eq 1 then
             lat["primitive_scaling"] := "\\N";

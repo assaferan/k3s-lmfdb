@@ -1,11 +1,13 @@
 #!/usr/bin/env -S sage -python
 
+import os
 import sys
 import time
 import shutil
 import argparse
 import subprocess
 import contextlib
+from collections import defaultdict
 from pathlib import Path
 # Fully initialise Sage: under "sage -python" the lazy imports are not pre-resolved,
 # which breaks genus enumeration in two ways on Sage 10.7 -- a missing
@@ -45,6 +47,14 @@ parser.add_argument("--enum-sizelimit", type=int, default=1000, help="For genera
 parser.add_argument("--enum-adjlimit", type=int, default=0, help="Work budget for the adjacency (Hecke) matrix: skip it when the estimated work (~class_number * sum_p p^(rank-2) over the Hecke primes p) exceeds this; 0 = no budget, always attempt it.  Defaults to 0 because the estimate mis-prices reality badly -- at rank 7 the sum_p p^5 term crosses a 20000 budget at class number 6, yet a whole rank-7 genus fills in ~4s, so a budget of 20000 silently dropped Hecke data for 65 rank-7 genera (4.4%% of definite genera overall) that were never expensive.  AdjacencyMatrix now runs under a hard-killed TimeoutCall, which bounds it by measured time instead of a bad model; prefer that.  Set this only if you specifically want to skip adjacency without even trying.")
 parser.add_argument("--no-orth", action="store_true", help="Disable the orbit-method genus enumeration (use the p-neighbour walk only)")
 parser.add_argument("--warm-limit", type=int, default=300, help="Wall-clock budget (seconds) for each fill job's batch cache pre-warm.  The pre-warm runs in the parent Magma process (so forked per-genus enumerations inherit the warmed cache) and therefore cannot be bounded by TimeoutCall; past this budget it aborts at a safe point and the job continues with a partial cache plus the on-disk tier.")
+
+# Embedding stage (Julia/Oscar; see oscar/INTEGRATION_PLAN.md and the README for setup)
+parser.add_argument("--embed-tasks", default="overlat,corank1,k3", help="Comma list of embedding computations: overlat (prime-index overlattices), corank1 (rank n -> n+1 primitive embeddings), k3 (primitive-embedding counts into the K3 lattice)")
+parser.add_argument("--embed-jobs", type=int, default=8, help="Parallel Julia workers for the embedding stage.  Separate from -j: each worker loads Oscar (~30s startup, a few GB of memory)")
+parser.add_argument("--embed-classlimit", type=int, default=200, help="Skip genera with class number above this in the embedding stage (its cost grows with the class lists on both sides)")
+parser.add_argument("--embed-max-disc-ratio", type=int, default=0, help="Determinant cap C for the embedding stage, in the enumeration convention (rank n up to C/n); 0 = same as --max-disc-ratio")
+parser.add_argument("--embed-k3-min-rank", type=int, default=12, help="Lowest rank for the k3 task: the orthogonal complement inside the rank-22 K3 lattice has rank 22-n, and Oscar's embedding machinery has to enumerate its genus, which explodes as n decreases")
+parser.add_argument("--embed-timelimit", type=int, default=3600, help="Wall-clock seconds per embedding job (enforced by GNU parallel --timeout; a killed job loses only its own task)")
 
 # Skip stages
 parser.add_argument("--skip-list-genera", action="store_true", help="Assume that genera have already been listed")
@@ -154,15 +164,134 @@ def build_tensor_inputs(fname):
             total += 1
     return total
 
-def parallel(jobfile, joblog, magma_args, colsep=None):
-    cmd = ["parallel", "-j", str(args.jobs), "--joblog", joblog, "--eta", "-a", jobfile]
+def build_embedding_inputs(fname):
+    """Write embed_jobs.txt (lines "task:labelsfile:labelsfile2", with "-" when a
+    task has no second file) plus the per-task genus-label lists under embed_labels/.
+
+    A genus qualifies when fill produced its genera_advanced record with
+    1 <= class_number <= --embed-classlimit and its determinant is within the
+    embedding cap (C/rank, with the K3 extension C/(22-rank) for the k3 lists);
+    the Julia loader re-verifies completeness (every class file on disk) before
+    using a genus, so a qualifying-but-partially-stored genus is skipped there.
+    Jobs are one per rank (overlat, k3) or rank pair (corank1); finer batching
+    with per-unit resume markers is future work (oscar/INTEGRATION_PLAN.md)."""
+    C = args.embed_max_disc_ratio or args.max_disc_ratio
+    tasks = [t.strip() for t in args.embed_tasks.split(",") if t.strip()]
+    basic_fmt = Path("genera_basic.format").read_text().strip().split("|")
+    combined_fmt = basic_fmt + Path("genera_advanced.format").read_text().strip().split("|")
+    by_rank = defaultdict(list)            # rank -> [(label, nminus, is_even, disc)]
+    for r in ranks():
+        base = Path("genera_advanced", str(r))
+        if not base.is_dir():
+            continue
+        for f in base.glob("*/*"):
+            pieces = f.read_text().split("\n")[0].split("|")
+            if len(pieces) != len(combined_fmt):
+                continue
+            rec = dict(zip(combined_fmt, pieces))
+            cn = rec.get("class_number", "\\N")
+            if cn in ("\\N", "None", "") or not (1 <= int(cn) <= args.embed_classlimit):
+                continue
+            by_rank[r].append((rec["label"], int(rec["nminus"]), rec["is_even"] == "T",
+                               int(rec["disc_abs"])))
+    labels_dir = Path("embed_labels")
+    if labels_dir.is_dir():
+        shutil.rmtree(labels_dir)
+    labels_dir.mkdir()
+    # Exclusion lists for the completeness certificates (oscar/refine_universality.py):
+    # a definite genus inside the det window that is NOT part of the embedding
+    # universe caps the certified range below its det.
+    included = {r: {lab for lab, _, _, _ in recs} for r, recs in by_rank.items()}
+    for r in ranks():
+        base = Path("genera_basic", str(r), str(r))       # definite: nplus == rank
+        if not base.is_dir():
+            continue
+        base_cap = C // r
+        lines = []
+        for f in base.glob("*"):
+            pieces = f.read_text().split("\n")[0].split("|")
+            rec = dict(zip(basic_fmt, pieces))
+            det = abs(int(rec["disc_abs"]))
+            if det > base_cap:
+                continue
+            lab = rec["label"]
+            if lab in included.get(r, ()):
+                continue
+            reason = ("no_advanced" if not Path("genera_advanced", str(r), str(r), lab).exists()
+                      else "classlimit")
+            lines.append(f"{lab}|{det}|{reason}")
+        if lines:
+            (labels_dir / f"rank{r}_excluded.txt").write_text("\n".join(lines) + "\n")
+    files = {}
+    for r, recs in by_rank.items():
+        base_cap = C // r
+        labels = [lab for lab, _, _, d in recs if d <= base_cap]
+        if labels:
+            p = labels_dir / f"rank{r}_all.txt"
+            p.write_text("\n".join(labels) + "\n")
+            files[r] = p
+        if "k3" in tasks and args.embed_k3_min_rank <= r <= 21:
+            k3_cap = max(base_cap, C // (22 - r)) if (12 <= r <= 20 and not args.nokthree) else base_cap
+            k3_labels = [lab for lab, nminus, is_even, d in recs
+                         if is_even and nminus in (1, 2) and d <= k3_cap]
+            if k3_labels:
+                p = labels_dir / f"rank{r}_k3.txt"
+                p.write_text("\n".join(k3_labels) + "\n")
+                files[(r, "k3")] = p
+    total = 0
+    with open(fname, "w") as Fout:
+        for r in sorted(by_rank):
+            if "overlat" in tasks and r in files:
+                Fout.write(f"overlat:{files[r]}:-\n")
+                total += 1
+            if "k3" in tasks and (r, "k3") in files:
+                Fout.write(f"k3:{files[(r, 'k3')]}:-\n")
+                total += 1
+            if "corank1" in tasks and r in files and (r + 1) in files:
+                Fout.write(f"corank1:{files[r]}:{files[r + 1]}\n")
+                total += 1
+    return total
+
+def julia_env():
+    """A minimal environment for Julia subprocesses.  Running under `sage -python`,
+    `import sage.all` exports Sage's compiler/library variables (CPATH, LIBRARY_PATH,
+    LDFLAGS, PERL5LIB, SINGULAR_BIN_DIR, ...), which stall Oscar's startup in the
+    child from ~25s to beyond 600s; with only the basics kept it loads normally."""
+    keep = ("PATH", "HOME", "USER", "LOGNAME", "SHELL", "TMPDIR", "LANG", "LC_ALL", "TERM")
+    env = {k: os.environ[k] for k in keep if k in os.environ}
+    env.update({k: v for k, v in os.environ.items() if k.startswith("JULIA_")})
+    return env
+
+def check_oscar():
+    """The embedding stage needs the pinned dev-Oscar project under oscar/ (see the
+    README); a broken or missing environment skips the stage rather than failing it,
+    and prints why so the skip is diagnosable."""
+    try:
+        r = subprocess.run(["julia", "--project=oscar", "-e",
+                            "using Oscar; @assert isdefined(Oscar, :_primitive_embeddings_in_unimodular_safe)"],
+                           capture_output=True, timeout=600, env=julia_env())
+        if r.returncode != 0:
+            tail = r.stderr.decode(errors="replace").strip().splitlines()[-3:]
+            print("  oscar preflight failed: " + " | ".join(tail), flush=True)
+        return r.returncode == 0
+    except FileNotFoundError:
+        print("  oscar preflight failed: no `julia` on PATH", flush=True)
+        return False
+    except subprocess.TimeoutExpired:
+        print("  oscar preflight failed: `using Oscar` exceeded 600s (not precompiled?)", flush=True)
+        return False
+
+def parallel(jobfile, joblog, prog_args, colsep=None, prog=None, jobs=None, timeout=None, env=None):
+    cmd = ["parallel", "-j", str(jobs or args.jobs), "--joblog", joblog, "--eta", "-a", jobfile]
+    if timeout is not None:
+        cmd += ["--timeout", str(timeout)]
     if colsep is not None:
         cmd += ["--colsep", colsep]
-    cmd += ["magma", "-b"] + magma_args
+    cmd += (prog or ["magma", "-b"]) + prog_args
     # GNU parallel returns the number of failed jobs; don't abort the pipeline on
     # per-job failures -- log a warning and continue (the joblog records which
     # jobs failed so they can be retried).
-    result = subprocess.run(cmd)
+    result = subprocess.run(cmd, env=env)
     if result.returncode != 0:
         print(f"  WARNING: {result.returncode} job(s) failed (see {joblog}); continuing", flush=True)
 
@@ -179,7 +308,8 @@ def clean_outputs():
     """
     targets = ["genera_advanced", "genera_hash", "lattice_basic_data",
                "lattice_advanced_data", "lattice_hashes", "voronoi", "shortest",
-               "orth_cache"]   # stale cached genera would leak old counters/labels into provenance
+               "orth_cache",   # stale cached genera would leak old counters/labels into provenance
+               "inclusions", "embed_labels", "refine_sidecar"]
     if not args.skip_list_genera:
         targets.append("genera_basic")   # regenerated below; otherwise it is this run's input
     removed = []
@@ -188,7 +318,7 @@ def clean_outputs():
         if p.is_dir():
             removed.append(f"{t} ({sum(1 for q in p.rglob('*') if q.is_file())} files)")
             shutil.rmtree(p)
-    for f in [Path("atomic_names")] + sorted(Path(".").glob("atomic_names_partial_*")):
+    for f in [Path("atomic_names"), Path("lat_inclusions.tbl")] + sorted(Path(".").glob("atomic_names_partial_*")):
         if f.exists():
             f.unlink()
             removed.append(f.name)
@@ -198,6 +328,10 @@ def clean_outputs():
 def main():
     if args.clean:
         clean_outputs()
+    if args.skip_embeddings and Path("refine_sidecar").is_dir():
+        print("WARNING: --skip-embeddings, but a refine_sidecar/ directory from an "
+              "earlier run exists; connect will consume it.  Use --clean (or delete "
+              "it) if this run's data differs from the run that produced it.", flush=True)
     if not args.skip_list_genera:
         inputs = build_genus_inputs()
         total = len(inputs)
@@ -251,7 +385,65 @@ def main():
                           "labels:={1}", "run_fill_genus.m"])
 
     if not args.skip_embeddings:
-        print("Finding lattice embeddings (TODO: Oscar embedding code)")
+        # Julia/Oscar embedding stage (oscar/INTEGRATION_PLAN.md): overlattices,
+        # corank-1 primitive embeddings and K3-embedding counts, assembled into
+        # lat_inclusions.tbl.  Needs only the fill outputs, and runs last so the
+        # slowest optional stage cannot delay the core tables.
+        ecount = build_embedding_inputs("embed_jobs.txt")
+        if ecount == 0:
+            print("No embedding jobs in range; skipping embeddings", flush=True)
+        elif not check_oscar():
+            print("WARNING: Julia/Oscar environment not ready (setup: lattices/README.md); skipping embeddings", flush=True)
+        else:
+            with timed(f"Computing embeddings ({ecount} jobs)"):
+                parallel("embed_jobs.txt", "embed.joblog",
+                         ["--task", "{1}", "--labels-file", "{2}", "--labels-file2", "{3}",
+                          "--data-root", ".", "--out-root", "inclusions"],
+                         colsep=":", prog=["julia", "--project=oscar", "oscar/driver.jl"],
+                         jobs=args.embed_jobs, timeout=args.embed_timelimit, env=julia_env())
+            with timed("Writing lat_inclusions.tbl"):
+                wt = subprocess.run(["julia", "--startup-file=no", "oscar/write_table.jl",
+                                     "--inclusions-root", "inclusions",
+                                     "--out", "lat_inclusions.tbl",
+                                     "--lattice-root", "lattice_basic_data"], env=julia_env())
+                if wt.returncode != 0:
+                    # quarantine the partial table so the refine step (and anything
+                    # else keyed on its existence) does not consume a bad file
+                    if Path("lat_inclusions.tbl").exists():
+                        Path("lat_inclusions.tbl").rename("lat_inclusions.tbl.failed")
+                    print("  WARNING: lat_inclusions writer failed "
+                          "(partial output in lat_inclusions.tbl.failed); "
+                          "sidecar refinement will be skipped", flush=True)
+
+    # Bottom-up bitset pass over the embedding poset (oscar/refine_universality.py):
+    # give the rank-n lattices distinct powers of two, OR the masks up the corank-1
+    # and overlattice edges, then record per-lattice sidecars for connect: db-relative
+    # heuristic values (all-ones = n-universal over the coverage window, mask equals
+    # the genus OR = n-regular), certified universality upper bounds, and regularity
+    # candidate counterexamples.  Certificates come from the drivers' completion
+    # manifests plus the exclusion lists: a cleanly finished job certifies its whole
+    # det window, making closure-absence SOUND for corank-1 pairs inside it (their
+    # chains cannot leave the window, since overlattice steps only lower the det), so
+    # those candidates skip the Magma confirmation that connect runs for the rest.
+    if not args.skip_embeddings and Path("lat_inclusions.tbl").exists():
+        with timed("Deriving embedding-poset sidecars for connect"):
+            sys.path.insert(0, "oscar")
+            import refine_universality as _refine
+            _lats = _refine.read_meta_lattice_dir("lattice_basic_data")
+            _edges = _refine.read_inclusions("lat_inclusions.tbl", _lats)
+            _C = args.embed_max_disc_ratio or args.max_disc_ratio
+            _flags, _cands, _mmd = _refine.closure_flags(_lats, _edges, disc_ratio=_C)
+            _ranks = sorted({m.rank for m in _lats.values() if m.definite})
+            _certs = _refine.derive_certificates("embed_labels", "inclusions/data", _C, _ranks)
+            _resolved = _refine.resolve_candidates(_cands, _lats, _certs)
+            if Path("refine_sidecar").is_dir():
+                shutil.rmtree("refine_sidecar")
+            nsc = _refine.write_sidecars("refine_sidecar", _lats, _flags, _mmd, _resolved, _certs)
+            Path("regularity_candidates.txt").write_text(
+                "".join(f"{l}\t{n}\t{s0}\n" for l, n, s0 in _cands))
+            _np = sum(1 for v in _resolved.values() for c in v if c[2] == "p")
+            print(f"  wrote {nsc} sidecar records; {len(_cands)} candidates "
+                  f"({_np} certificate-proven)", flush=True)
 
     if not args.skip_tensor:
         tcount = build_tensor_inputs("tensor_jobs.txt")
@@ -309,6 +501,7 @@ def main():
         with timed("Connecting genera (pass 2: consume)"):
             parallel("genus_jobs.txt", "connect2.joblog",
                      ["labels:={1}", "phase:=2", "run_connect_genus.m"])
+
 
 if __name__ == "__main__":
     main()
