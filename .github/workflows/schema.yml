@@ -1,0 +1,35 @@
+name: schema
+
+# Runs lattices/tests/test_schema_consistency.py, which drives the real
+# load_schemas() from nde_to_upload.sage over every schemas/*.md and fails on
+# rows it would silently drop (a column whose upload would be all nulls).
+# Plain Python: no Magma, no Sage, no secrets.
+#
+# Deliberately a separate workflow on `pull_request`, NOT a job in tests.yml:
+# tests.yml uses pull_request_target, so its PR code runs with secrets, a
+# write-capable token and the default branch's cache, and has to sit behind a
+# write-access gate. This check needs none of that. Under `pull_request` a fork
+# PR runs with a read-only token, no secrets and its own cache scope, so it is
+# safe ungated -- and it runs for every contributor, including PR authors who
+# would not pass the gate.
+
+on:
+  push:
+    branches: [ '**' ]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  schema:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Check schemas against the parser and the .format files
+        working-directory: lattices
+        run: python3 tests/test_schema_consistency.py
