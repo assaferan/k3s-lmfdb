@@ -96,6 +96,12 @@ def suspicious_rows(table):
     return out
 
 
+def schema_tables():
+    """Every table load_schemas() reads: one per schemas/*.md."""
+    d = os.path.join(LATTICES, "..", "schemas")
+    return [f[:-3] for f in os.listdir(d) if f.endswith(".md")]
+
+
 def format_columns(name):
     with open(os.path.join(LATTICES, name + ".format")) as f:
         header = f.read().split("\n")[0]
@@ -106,7 +112,11 @@ def main():
     schemas = real_load_schemas()
     failures = []
 
-    for table, fmt_names in sorted(TABLE_FORMATS.items()):
+    # Structural checks run on EVERY schemas/*.md, not just the lattice tables:
+    # load_schemas() parses all of them, and a table owned by another pipeline
+    # (k3_fq_*, k3_*) is just as exposed -- jvoight/k3s-lmfdb#75 had a literal
+    # "|" in a LaTeX description that silently dropped artin_tate_values.
+    for table in sorted(schema_tables()):
         names = [col for col, _typ in schemas[table]]
 
         for lineno, text in suspicious_rows(table):
@@ -135,6 +145,10 @@ def main():
                     "is being treated as data" % (table, col)
                 )
 
+    # Format coverage only applies to tables this pipeline writes.
+    for table, fmt_names in sorted(TABLE_FORMATS.items()):
+        names = [col for col, _typ in schemas[table]]
+
         produced = set()
         for fmt_name in fmt_names:
             produced |= set(format_columns(fmt_name))
@@ -158,6 +172,7 @@ def main():
             )
 
         print("  %s: %d columns, %d produced" % (table, len(names), len(produced)))
+    print("  structural checks: %d schema files" % len(schema_tables()))
 
     print()
     if failures:
