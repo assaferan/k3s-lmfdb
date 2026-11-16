@@ -27,4 +27,4 @@ Note: every period must have a model associated to it, stored in the `k3_polariz
 | picard_rank_certified | boolean | upper and lower rank bounds agree |
 | picard_certified | boolean | upper and lower bounds agree (possible that the ranks agree but there could be a finite-index problem) |
 | algebraic_brauer_group | bigint[] | The algebraic Brauer group of the K3 surface: Br_1(X)/Br(Q) where Br_1(X) = ker(Br(X) -> Br(Xbar)) |
-| transcendental_brauer_group: Br(Xbar)/Br_1(X) |
+| transcendental_brauer_group | bigint[] | The transcendental Brauer group of the K3 surface: Br(X)/Br_1(X), the image of Br(X) in Br(Xbar) |
