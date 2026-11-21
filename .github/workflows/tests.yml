@@ -72,10 +72,10 @@ jobs:
       # Every event except pull_request_target checks out the triggering ref
       # (the default branch for schedule). Gating this on `push` alone left
       # schedule and workflow_dispatch runs with an empty workspace.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         if: ${{ github.event_name != 'pull_request_target' }}
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         if: ${{ github.event_name == 'pull_request_target' }}
         with:
           ref: ${{ github.event.pull_request.head.sha }}
@@ -144,7 +144,7 @@ jobs:
     if: needs.has_access.outputs.has_access == 'true'
     steps:
       - name: Cache magma
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         id: magmacache
         env:
           # Keep in sync with CACHE_NUMBER in the test job below.
@@ -230,13 +230,13 @@ jobs:
           esac
 
       - name: Checkout for push, schedule and workflow_dispatch
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         if: ${{ github.event_name != 'pull_request_target' }}
         with:
           submodules: recursive
 
       - name: Checkout for a PR event
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         if: ${{ github.event_name == 'pull_request_target' }}
         with:
           ref: ${{ github.event.pull_request.head.sha }}
@@ -249,7 +249,7 @@ jobs:
           persist-credentials: false
 
       - name: Cache magma
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         id: magmacache
         env:
           # Increase this value to reset the cache when MAGMA_URL changes.
@@ -314,7 +314,7 @@ jobs:
 
       - name: Upload transcript on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: log-${{ matrix.target }}
           path: lattices/tests/logs/${{ matrix.target }}.log
