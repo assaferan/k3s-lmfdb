@@ -118,7 +118,19 @@ intrinsic FindLabel(L::Lat : genus_data:=<>) -> MonStgElt
         genus_data := FindGenusData(L);
     end if;
     genus_hash, hash_func := Explode(genus_data);
-    by_hash := GetHashes(genus_hash, Rank(L), Signature(GramMatrix(L)));
+    label_pos := Index(hash_format, "label");
+    nplus := Signature(GramMatrix(L));
+    if nplus gt 0 and nplus lt Rank(L) then
+        // Indefinite lattices are stored with hash "\N", which GetHashes skips, so
+        // looking them up by hash found nothing and every indefinite dual_label,
+        // even_sublattice and primitive_scaling came out null.  Read the genus's
+        // rows directly.  With one stored class it is the answer; with several we
+        // cannot tell them apart (IsIsomorphic below needs a definite lattice), so
+        // stay null rather than guess.
+        rows := load_hash_rows(genus_hash, Rank(L), nplus);
+        return (#rows eq 1) select rows[1][label_pos] else "\\N";
+    end if;
+    by_hash := GetHashes(genus_hash, Rank(L), nplus);
     if #by_hash eq 0 then
         // No lattices stored for this genus
         return "\\N";
@@ -143,7 +155,6 @@ intrinsic FindLabel(L::Lat : genus_data:=<>) -> MonStgElt
         end for;
         assert #found ne 0;
     end if;
-    label_pos := Index(hash_format, "label");
     return found[label_pos];
 end intrinsic;
 
