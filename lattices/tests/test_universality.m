@@ -78,6 +78,28 @@ for tup in [* <Lattice("A", 2), 0, true, "A2">, <Lattice("D", 4), 1, true, "D4">
         "even_universality " * tup[4]);
 end for;
 
+// ---- AutPreservesGram: the frame check connect_genus.m runs on a stored aut_group
+// before handing it to LatticeUniversalityData.  Fill output from before 9882be0
+// could store E8's group in one basis next to a gram in another (a scrambled
+// basis on a CanonicalForm timeout); such a group must be rejected, while the
+// same group conjugated into the new basis must be accepted.
+// upper times lower unitriangular, so unimodular with no fixed basis vector
+T := Matrix(Integers(), 8, 8, [<i, i, 1> : i in [1..8]] cat [<i, i+1, i> : i in [1..7]])
+     * Matrix(Integers(), 8, 8, [<i, i, 1> : i in [1..8]] cat [<i+1, i, -1> : i in [1..7]]);
+assert Abs(Determinant(T)) eq 1;
+GE8 := GramMatrix(E8);
+E8s := LatticeWithGram(T * GE8 * Transpose(T));
+AE8 := AutomorphismGroup(E8);
+AssertEqual(~results, AutPreservesGram(AE8, E8), true, "AutPreservesGram E8, own frame");
+AssertEqual(~results, AutPreservesGram(AE8, E8s), false, "AutPreservesGram E8 group on scrambled E8");
+AssertEqual(~results, AutPreservesGram(AutomorphismGroup(E8s), E8s), true,
+    "AutPreservesGram scrambled E8, own frame");
+Ti := ChangeRing(T, Rationals())^-1;
+conj := sub<GL(8, Integers()) | [ChangeRing(T * ChangeRing(g, Rationals()) * Ti, Integers())
+                                 : g in Generators(AE8)]>;
+AssertEqual(~results, AutPreservesGram(conj, E8s), true,
+    "AutPreservesGram E8 group conjugated into the scrambled frame");
+
 // ---- RankOneIrregularityWitness on synthetic genus theta data
 thetas := [[1, 0, 1, 0, 1], [1, 0, 1, 1, 1]];
 // class 2 has norm 3, class 1 misses it

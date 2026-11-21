@@ -181,11 +181,13 @@ intrinsic LabelPath(folder::MonStgElt, label::MonStgElt : Create := false) -> Mo
     return LabelPath(folder, rank, nplus, label : Create := Create);
 end intrinsic;
 
-function aut_preserves_gram(A, L)
+intrinsic AutPreservesGram(A::GrpMat, L::Lat) -> BoolElt
+{True if every generator g of A satisfies g * G * g^T eq G, where G is the Gram matrix of L, i.e. A acts as isometries of L in the coordinates of L's basis (the frame AutomorphismGroup(L) uses)}
     G := ChangeRing(GramMatrix(L), Rationals());
+    require Degree(A) eq NumberOfRows(G) : "A must have degree the rank of L";
     return forall{g : g in Generators(A) |
                   h * G * Transpose(h) eq G where h := ChangeRing(g, Rationals())};
-end function;
+end intrinsic;
 
 intrinsic AutOrbits(L::Lat, A::GrpMat, vecs::SeqEnum) -> SeqEnum
 {Given a lattice L, an automorphism group A of L and a sequence of vectors which is invariant under the action of A (which could be LatElts or ModTupFldElts), return orbit representatives for the action of A on vecs}
@@ -836,7 +838,7 @@ two-pass connect in run_all.py).}
                 catch e
                     autg := 0;
                 end try;
-                if Type(autg) eq GrpMat and not aut_preserves_gram(autg, L) then
+                if Type(autg) eq GrpMat and not AutPreservesGram(autg, L) then
                     autg := 0;
                 end if;
             end if;
