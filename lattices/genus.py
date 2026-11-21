@@ -235,6 +235,20 @@ def encode_rank(rk):
     assert rk < 10 + 26*2
     return chr(ord('A') + (rk - 10 - 26))
 
+def lattice_level(genus_sym):
+    """
+    The level in the LMFDB's sense (knowl lattice.level): the smallest N with
+    N * B(v, v) in 2Z for every v in the dual lattice.
+
+    Sage's genus_sym.level() is the smallest N with N * B(v, w) in Z on the dual,
+    i.e. the exponent e of the discriminant group.  The two agree unless the
+    top-scale 2-adic Jordan block is odd (type I), in which case the level is 2e.
+    That includes odd lattices of odd determinant: diag(1, 3) has e = 3 but level 6.
+    """
+    N = genus_sym.level()
+    top = genus_sym.local_symbol(2).symbol_tuple_list()[-1]  # [scale exponent, rank, det, odd?, oddity]
+    return 2 * N if top[3] == 1 else N
+
 def create_genus_label(genus_sym):
     '''
     Returns a string which is the LMFDB label of the genus symbol.
@@ -604,7 +618,7 @@ def create_genus_entry(genus_symbol):
         table_row['disc_half'] /= 2
     table_row['disc_2adic_unit'] = disc.val_unit(2)[1] % 8
     table_row['conway_symbol'] = conway_symbol(genus_symbol)
-    table_row['level'] = level = genus_symbol.level()
+    table_row['level'] = level = lattice_level(genus_symbol)
     table_row['is_even'] = genus_symbol.is_even()
     disc_form = genus_symbol.discriminant_form() # Timing: this was slow
     invs = disc_form.invariants()
