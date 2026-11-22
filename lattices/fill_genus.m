@@ -23,12 +23,19 @@ intrinsic StringToReal(s::MonStgElt) -> RngIntElt
 end intrinsic;
 
 intrinsic ThetaSeriesIncremental(L::Lat, target_prec::RngIntElt, timeout::RngIntElt) -> SeqEnum, RngIntElt, Assoc
-{Compute the theta series coefficients of L, doubling the precision until either target_prec is reached or the time budget timeout (in seconds) is exhausted. Returns the coefficient sequence obtained, the precision actually reached, and an associative array mapping each precision computed to the time (in seconds) it took to compute the theta series to that precision.}
+{Compute the theta series coefficients of L, doubling the precision until either target_prec is reached or the time budget timeout (in seconds) is exhausted (or computing target_prec at once when ThetaSeriesFast glues blocks, whose cost hardly depends on the precision). Returns the coefficient sequence obtained, the precision actually reached, and an associative array mapping each precision computed to the time (in seconds) it took to compute the theta series to that precision.}
     best_theta := [];
     best_prec := 0;
     theta_elapsed := AssociativeArray();
     remaining := timeout;
     prec := Maximum(16, Minimum(L) + 4);
+    // ThetaSeriesFast glues blocks from rank 6 on (integral L); its cost there is
+    // mostly a fixed overhead (the sum over the glue group), nearly the same at
+    // precision 16 as at 150, so the doubling steps below would each pay it again.
+    // Go straight to the target instead.
+    if Rank(L) ge 6 and forall{x : x in Eltseq(GramMatrix(L)) | IsIntegral(x)} then
+        prec := Maximum(prec, target_prec);
+    end if;
     // Loop on best_prec, not prec: with prec doubling from 16, testing prec le
     // target_prec stopped at 128 for a target of 150, so the target was never reached.
     while best_prec lt target_prec and remaining gt 0 do
@@ -37,7 +44,7 @@ intrinsic ThetaSeriesIncremental(L::Lat, target_prec::RngIntElt, timeout::RngInt
         // child's work (it read 0.000 for steps that took seconds), so the budget
         // was never charged and the recorded timings were all 0.
         t0 := Realtime();
-        success, theta := TimeoutCall(remaining, ThetaSeriesFast, <L, current_prec - 1>, 1);
+        success, theta := TimeoutCall(Ceiling(remaining), ThetaSeriesFast, <L, current_prec - 1>, 1);
         e := Realtime(t0);
         if not success then
             vprintf FillGenus, 1 : "Theta series timed out at precision %o\n", current_prec;
@@ -51,7 +58,7 @@ intrinsic ThetaSeriesIncremental(L::Lat, target_prec::RngIntElt, timeout::RngInt
         theta_elapsed[current_prec] := e;
         vprintf FillGenus, 1 : "Theta series to precision %o in %o s\n", current_prec, e;
         if current_prec ge target_prec then break; end if;
-        remaining -:= Ceiling(e);
+        remaining -:= e;   // the measured time: Ceiling charged >= 1 s per step
         prec *:= 2;
         // Do not start a step that cannot finish: a killed step wastes the rest of
         // the budget, which counts against the genus's timelimit.  The cost grows
@@ -66,6 +73,13 @@ intrinsic ThetaSeriesIncremental(L::Lat, target_prec::RngIntElt, timeout::RngInt
     end while;
     return best_theta, best_prec, theta_elapsed;
 end intrinsic;
+
+// Theta coefficient i of a stored series.  The stored sequence comes from Eltseq,
+// which drops trailing zero coefficients, so it can be shorter than its theta_prec
+// (common for dual series at precision 150); the missing coefficients are 0.
+function coeff(s, i)
+    return i le #s select s[i] else 0;
+end function;
 
 function dict_to_jsonb(dict)
     return "{" * Join([Sprintf("\"%o\":%o", key, dict[key]) : key in Keys(dict)], ",") * "}";
@@ -497,7 +511,7 @@ enumeration for definite genera of rank >= 3 (see GenusReps in genus_reps.m).}
         if Type(L1["theta_series"]) eq SeqEnum and Type(L2["theta_series"]) eq SeqEnum then
             prec := Minimum(L1["theta_prec"], L2["theta_prec"]);
             for i in [1..prec - 1] do
-                d := L1["theta_series"][i] - L2["theta_series"][i];
+                d := coeff(L1["theta_series"], i) - coeff(L2["theta_series"], i);
                 if (d ne 0) then return d; end if;
             end for;
         end if;
@@ -505,7 +519,7 @@ enumeration for definite genera of rank >= 3 (see GenusReps in genus_reps.m).}
         if Type(L1["dual_theta_series"]) eq SeqEnum and Type(L2["dual_theta_series"]) eq SeqEnum then
             prec := Minimum(L1["dual_theta_prec"], L2["dual_theta_prec"]);
             for i in [1..prec - 1] do
-                d := L1["dual_theta_series"][i] - L2["dual_theta_series"][i];
+                d := coeff(L1["dual_theta_series"], i) - coeff(L2["dual_theta_series"], i);
                 if (d ne 0) then return d; end if;
             end for;
         end if;
