@@ -54,7 +54,7 @@ intrinsic HashLat(L::Lat, genus_hash::RngIntElt, hash_func::MonStgElt) -> RngInt
     code := hash_func[1..2];
     m := StringToInteger(hash_func[3..#hash_func]);
     if code eq "Th" then
-        theta := Eltseq(ThetaSeries(L, m-1));
+        theta := Eltseq(ThetaSeriesFast(L, m-1));
         return ThetaHash(theta, genus_hash, m);
     elif code eq "BV" then
         return BVHash(L, genus_hash, m);
@@ -169,11 +169,14 @@ intrinsic SetHashes(~lats::SeqEnum[Assoc], ~genus::Assoc, theta_elapsed::Assoc, 
     lattices := [lat["lattice"] : lat in lats];
     for m in [min_norm..min_norm+3] do
         // TODO: if there are too many vectors of norm up to m we can bail before calling BVhashes
-        success, res, elapsed := TimeoutCall(timeout, BVhashes, <lattices, genus_hash, m>, 1);
+        // timed here, not by TimeoutCall's elapsed, which reads 0 (see ThetaSeriesIncremental)
+        t0 := Realtime();
+        success, res := TimeoutCall(timeout, BVhashes, <lattices, genus_hash, m>, 1);
+        elapsed := Realtime(t0);
         if success then
             res := res[1];   // TimeoutCall wraps the results in a List; unwrap to the hash sequence
             dcount := #{h : h in res};
-            Append(~hash_opts, <-dcount, to_secs(StringToReal(elapsed)), Sprintf("BV%o", m)>);
+            Append(~hash_opts, <-dcount, to_secs(elapsed), Sprintf("BV%o", m)>);
             BVvals[m] := res;
             if dcount eq #lats then
                 break;

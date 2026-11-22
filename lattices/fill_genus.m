@@ -29,23 +29,40 @@ intrinsic ThetaSeriesIncremental(L::Lat, target_prec::RngIntElt, timeout::RngInt
     theta_elapsed := AssociativeArray();
     remaining := timeout;
     prec := Maximum(16, Minimum(L) + 4);
-    while prec le target_prec and remaining gt 0 do
+    // Loop on best_prec, not prec: with prec doubling from 16, testing prec le
+    // target_prec stopped at 128 for a target of 150, so the target was never reached.
+    while best_prec lt target_prec and remaining gt 0 do
         current_prec := Minimum(prec, target_prec);
-        success, theta, elapsed := TimeoutCall(remaining, ThetaSeries, <L, current_prec - 1>, 1);
+        // Time the call here: the elapsed TimeoutCall returns does not measure the
+        // child's work (it read 0.000 for steps that took seconds), so the budget
+        // was never charged and the recorded timings were all 0.
+        t0 := Realtime();
+        success, theta := TimeoutCall(remaining, ThetaSeriesFast, <L, current_prec - 1>, 1);
+        e := Realtime(t0);
         if not success then
             vprintf FillGenus, 1 : "Theta series timed out at precision %o\n", current_prec;
             break;
         end if;
         best_theta := Eltseq(theta[1]);
         best_prec := current_prec;
-        // ThetaSeries recomputes the whole series each time, so this elapsed time
+        // ThetaSeriesFast recomputes the whole series each time, so this elapsed time
         // is the cost of computing theta to current_prec (which is what SetHashes
         // uses to cost theta-based hashing).
-        theta_elapsed[current_prec] := StringToReal(elapsed);
-        vprintf FillGenus, 1 : "Theta series to precision %o in %o s\n", current_prec, elapsed;
+        theta_elapsed[current_prec] := e;
+        vprintf FillGenus, 1 : "Theta series to precision %o in %o s\n", current_prec, e;
         if current_prec ge target_prec then break; end if;
-        remaining -:= Ceiling(StringToReal(elapsed));
+        remaining -:= Ceiling(e);
         prec *:= 2;
+        // Do not start a step that cannot finish: a killed step wastes the rest of
+        // the budget, which counts against the genus's timelimit.  The cost grows
+        // like the number of vectors enumerated, prec^(n/4) for the glued series
+        // (half the rank each side) and prec^(n/2) for ThetaSeries.
+        expo := (Rank(L) ge 6) select Rank(L) / 4 else Rank(L) / 2;
+        if e * (Minimum(prec, target_prec) / current_prec)^expo gt remaining then
+            vprintf FillGenus, 1 : "Theta series to precision %o would not fit in %o s\n",
+                Minimum(prec, target_prec), remaining;
+            break;
+        end if;
     end while;
     return best_theta, best_prec, theta_elapsed;
 end intrinsic;

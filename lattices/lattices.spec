@@ -13,6 +13,7 @@
     neighbours_canonical.mag
     orth_dec.mag
     tdesign.m
+    theta_glue.m
 
     FiniteGroups/Code
     {
