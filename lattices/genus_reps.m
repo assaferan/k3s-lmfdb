@@ -232,7 +232,7 @@ end function;
 // primitive in P^#, and v primitive in P.  Enumeration happens in the dual
 // (Remark 7.4 in Chenevier-Taibi), where the norm o/m is small.  Returns
 // false if more than max_vecs vectors would have to be considered.
-function typed_vector_orbits(P, o, m, max_vecs)
+function typed_vectors(P, o, m, max_vecs)
     n1 := Rank(P);
     GP := GramMatrix(P);
     Pd := Dual(P : Rescale := false);
@@ -248,7 +248,6 @@ function typed_vector_orbits(P, o, m, max_vecs)
         if IsZero(u) then break; end if;
         if #S mod 4096 eq 0 then check_orth_deadline(); end if;
         if #S ge max_vecs then
-            vprintf GenusReps, 1 : "orth: more than %o type vectors, giving up on this descent\n", max_vecs;
             return false, _;
         end if;
         cu := Eltseq(u);
@@ -260,6 +259,15 @@ function typed_vector_orbits(P, o, m, max_vecs)
         if GCD(Eltseq(v)) ne 1 then continue; end if;              // v primitive in P
         Append(~S, normsign(v));
     end while;
+    return true, S;
+end function;
+
+function typed_vector_orbits(P, o, m, max_vecs)
+    ok, S := typed_vectors(P, o, m, max_vecs);
+    if not ok then
+        vprintf GenusReps, 1 : "orth: more than %o type vectors, giving up on this descent\n", max_vecs;
+        return false, _;
+    end if;
     if #S eq 0 then return true, []; end if;
     // BFS orbit decomposition under the (sign-normalized) action of O(P).
     gens := [Matrix(Z, g) : g in Generators(AutomorphismGroupFaster(P))];
@@ -643,7 +651,7 @@ end function;
 // parent's mass instead was tried and causes "determinant creep", since Kneser
 // cost grows like 2^rank, which the mass does not see.  Tuples are
 // <cached, odd, detP, o/m, o, m, P>.
-function glue_scored(L, dual_norm_bound, rank_cap, use_cache)
+function glue_scored(L, dual_norm_bound, rank_cap, use_cache, max_vecs)
     cands := [c : c in glue_candidates(L) | c[2] le dual_norm_bound];
     scored := [];
     for c in cands do
@@ -673,8 +681,43 @@ function glue_scored(L, dual_norm_bound, rank_cap, use_cache)
         return 0;
     end function;
     Sort(~scored, cmp);
-    if #scored gt 4 then scored := scored[1 .. 4]; end if;
-    return scored;
+    // Keep up to four candidates that can actually succeed.  Two glue classes
+    // often give isometric parents with the same (o, m) (e.g. classes in one
+    // Aut(L)-orbit); their descents are the same, so only the first is kept.
+    // A candidate whose parent P already has more than max_vecs type vectors
+    // is dropped before the recursion enumerates its whole genus: the descent
+    // would give up on P's class anyway, and checking P costs one bounded
+    // short-vector run instead of a parent-genus enumeration.
+    kept := [];
+    seen := [];        // <o, m, P> of every candidate examined
+    seen_graphs := [* *];
+    for c in scored do
+        P := c[7];
+        dup := false;
+        for j in [1 .. #seen] do
+            if seen[j][1] ne c[5] or seen[j][2] ne c[6] then continue; end if;
+            if Determinant(seen[j][3]) ne Determinant(P) or IsEven(seen[j][3]) ne IsEven(P) then continue; end if;
+            if seen_graphs[j] cmpeq 0 then seen_graphs[j] := aut_graph(seen[j][3] : orth_bd := 6); end if;
+            if isom_graph(seen_graphs[j], P) then dup := true; break; end if;
+        end for;
+        if dup then
+            vprintf GenusReps, 2 : "orth: candidate (o=%o, m=%o) duplicates an earlier parent\n", c[5], c[6];
+            continue;
+        end if;
+        Append(~seen, <c[5], c[6], P>);
+        Append(~seen_graphs, 0);
+        if max_vecs gt 0 then
+            okv := typed_vectors(P, c[5], c[6], max_vecs);
+            if not okv then
+                vprintf GenusReps, 1 : "orth: skipping parent rank %o det %o (o=%o, m=%o): too many type vectors\n",
+                    Rank(P), Determinant(P), c[5], c[6];
+                continue;
+            end if;
+        end if;
+        Append(~kept, c);
+        if #kept ge 4 then break; end if;
+    end for;
+    return kept;
 end function;
 
 // Enumerate the genus of the positive definite lattice L, preferring the orbit
@@ -706,7 +749,7 @@ function genus_reps_orth_rec(L, depth, dual_norm_bound, max_vecs, rank_cap, use_
         if depth gt 0 then
             // A descent can fail only by exceeding max_vecs, in which case the
             // next candidate is tried.
-            for cand in glue_scored(L, dual_norm_bound, rank_cap, use_cache) do
+            for cand in glue_scored(L, dual_norm_bound, rank_cap, use_cache, max_vecs) do
                 besto := cand[5]; bestm := cand[6]; bestP := cand[7];
                 vprintf GenusReps, 1 : "orth: rank %o det %o -> parent rank %o det %o (o=%o, m=%o)\n",
                     Rank(L), Determinant(L), Rank(bestP), Determinant(bestP), besto, bestm;
@@ -840,7 +883,7 @@ representative sequences parallel to the input.}
         pending := [];
     end if;
     for t in pending do
-        scored := glue_scored(t[2], DualNormBound, RankCap, UseCache);
+        scored := glue_scored(t[2], DualNormBound, RankCap, UseCache, MaxVectors);
         if #scored eq 0 then
             Append(~singles, t);
             continue;
