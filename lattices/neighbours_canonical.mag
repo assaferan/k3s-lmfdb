@@ -105,7 +105,12 @@ end function;
 
 // bd := Infinity(); p := 2; done := {@@}; silent := false; aut_gp_fn := AutomorphismGroupFaster; nb_fn := newNeighbours; cf_fn := func<x|CanonicalForm(GramMatrix(x))>; hash := easy_hash; find_canonical := false;
 stoi := func<l,i|sub<l|[x[1]: x in ShortVectors(l,i)]>>;
-easy_hash := func<x|<IsEven(x) select "even" else "odd",a,b,c,d,/*#AutomorphismGroupFaster(x),*/ThetaSeries(x,(IsEven(x) select 100 div Dimension(x) else 50 div Dimension(x))),ThetaSeries(dl,(IsEven(dl) select 100 div Dimension(dl) else 50 div Dimension(dl)))> where dl is scaled_dual(x) where a,b,c is root_sub(x) where d is [Rank(stoi(x,i)): i in [1..6]]>;
+// The walk's hash: parity, root system, ranks of the spans of the vectors of norm
+// <= 1, 2, 3, and short theta series of L and its scaled dual.  Spans up to norm 3,
+// not 6: enumerating the vectors of norm <= 6 was 87% of a rank-16 walk (764 s; 81 s
+// with norm <= 3), and on nine rank 10-12 genera the walk was faster with the
+// smaller bound (143 s -> 78 s in total), with no extra isometry tests needed.
+easy_hash := func<x|<IsEven(x) select "even" else "odd",a,b,c,d,/*#AutomorphismGroupFaster(x),*/ThetaSeries(x,(IsEven(x) select 100 div Dimension(x) else 50 div Dimension(x))),ThetaSeries(dl,(IsEven(dl) select 100 div Dimension(dl) else 50 div Dimension(dl)))> where dl is scaled_dual(x) where a,b,c is root_sub(x) where d is [Rank(stoi(x,i)): i in [1..3]]>;
 hash_bv := func<x|Append(easy_hash(x),bv(x))>;
 // further improvement: only compute canonical form when we need it,
 // unless find_canonical is set to true
