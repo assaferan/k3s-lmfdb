@@ -237,7 +237,7 @@ function list_genus(pd: bd := Infinity(), p := 2, done := {@@}, silent := false,
   aut_graphs := [];
   can_forms := []; // I don't think we spend much time comparing them
   hash_ind := #hashed_inds; 
-  while #hashed+#unhashed gt 0 and mass_left gt 0 do
+  while #hashed+#unhashed+#unused gt 0 and mass_left gt 0 do
     ct +:= 1;
     if not silent then
       if ct mod 100 eq 0 then
@@ -263,14 +263,27 @@ function list_genus(pd: bd := Infinity(), p := 2, done := {@@}, silent := false,
         end if;
         Include(~known_hashes,h);
         Append(~hashed_inds,[]);
-        nbs := [LatticeWithGram(GramMatrix(x)): x in nb_fn(lat,p)];
-        nbs := [x: x in nbs|x notin hashed and x notin done and x notin unhashed];
-        unhashed cat:= nbs;
+        Append(~unused,lat); // expanded lazily, in the elif branch below
       else
         Append(~hashed,lat);
         Append(~hashed_inds[Index(known_hashes,h)],#hashed);
       end if;
-    else 
+    elif #unused gt 0 then
+      // Expand a known lattice only once the queue of unhashed neighbours is
+      // empty.  Expanding is the dominant cost (nb_fn computes the orbits of
+      // Aut(lat) on the lines of lat/p lat, ~0.5 s per lattice at rank 12 and
+      // p = 3), and the walk stops as soon as the mass is exhausted, so
+      // lattices found late usually never need expanding.  Expanding also comes
+      // before the isometry tests below, which are needed only when two
+      // non-isometric lattices share a hash.
+      ind := Random(1,#unused);
+      lat := unused[ind];
+      Remove(~unused,ind);
+      nbs := [LatticeWithGram(GramMatrix(x)): x in nb_fn(lat,p)];
+      nbs := [x: x in nbs|x notin hashed and x notin done and x notin unhashed];
+      unhashed cat:= nbs;
+      vprintf Genus, 3: "expanded a known lattice, #unhashed = %o\n", #unhashed;
+    else
       orig_hash_ind := hash_ind;
       repeat
         vprintf Genus, 3: "hash_ind = %o, orig_hash_ind = %o\n", hash_ind, orig_hash_ind;
@@ -280,18 +293,9 @@ function list_genus(pd: bd := Infinity(), p := 2, done := {@@}, silent := false,
           vprintf Genus, 3: "starting over from the beginning of the hash list, hash_ind = %o, #hashed_inds = %o\n", hash_ind, #hashed_inds;
         end if;
       until (#hashed_inds[hash_ind] gt 0) or (hash_ind eq orig_hash_ind);
-      if (#hashed_inds[hash_ind] eq 0) then // we looped over everything, need to use some of the unused
-        if #unused eq 0 then break; end if; // we have no more lattices we can use
-        ind := Random(1,#unused);
-        lat := unused[ind];
-        // "previously unused lattice", Eltseq(GramMatrix(lat));
-        Remove(~unused,ind);
-        nbs := [LatticeWithGram(GramMatrix(x)): x in nb_fn(lat,p)];
-        nbs := [x: x in nbs|x notin hashed and x notin done and x notin unhashed];
-        unhashed cat:= nbs;
-        vprintf Genus, 3: "adding neighbors of unused to unhashed, #unhashed = %o\n", #unhashed;
-        continue;
-      end if;
+      // every known lattice is expanded (#unused = 0 here) and no hashed
+      // lattice is left to test: the graph is exhausted at this prime
+      if (#hashed_inds[hash_ind] eq 0) then break; end if;
       ind := Random(hashed_inds[hash_ind]);
       h := known_hashes[hash_ind];
       lat := hashed[ind];
@@ -355,9 +359,7 @@ function list_genus(pd: bd := Infinity(), p := 2, done := {@@}, silent := false,
         if not silent then 
           vprintf Genus, 2: "%o\n", <<a,b,c> where a,b,c is root_sub(lat),RealField(5)!(mass_left/mass), #lat`AutomorphismGroup>; 
         end if;
-        nbs := [LatticeWithGram(GramMatrix(x)): x in nb_fn(lat,p)];
-        nbs := [x: x in nbs|x notin hashed and x notin done and x notin unhashed];
-        unhashed cat:= nbs;
+        Append(~unused,lat); // expanded lazily, in the elif branch above
       end if;
     end if;
   end while;
