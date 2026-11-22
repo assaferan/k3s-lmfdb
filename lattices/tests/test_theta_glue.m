@@ -35,6 +35,11 @@ G := Matrix(Z, 10, 10, [2,1,1,1,1,1,1,1,1,1, 1,2,1,1,1,1,1,1,1,1, 1,1,2,1,1,1,1,
 L := LatticeWithGram(G);
 AssertTrue(~results, same(L, 30), "glued theta of a rank-10 lattice");
 AssertTrue(~results, same(Dual(L), 30), "glued theta of its rescaled dual");
+// every block size must give the same series
+for b in [2, 3, 4, 5, 9] do
+    AssertTrue(~results, Eltseq(ThetaSeriesGlued(L, 30 : BlockRank := b)) eq Eltseq(ThetaSeries(L, 30)),
+        Sprintf("glued theta of the rank-10 lattice with BlockRank %o", b));
+end for;
 // slicing the norm range must not change the answer
 a := ThetaSeriesGlued(L, 30 : MaxVectorsPerCall := 50);
 AssertTrue(~results, Eltseq(a) eq Eltseq(ThetaSeries(L, 30)), "glued theta with many slices");

@@ -55,9 +55,9 @@ intrinsic ThetaSeriesIncremental(L::Lat, target_prec::RngIntElt, timeout::RngInt
         prec *:= 2;
         // Do not start a step that cannot finish: a killed step wastes the rest of
         // the budget, which counts against the genus's timelimit.  The cost grows
-        // like the number of vectors enumerated, prec^(n/4) for the glued series
-        // (half the rank each side) and prec^(n/2) for ThetaSeries.
-        expo := (Rank(L) ge 6) select Rank(L) / 4 else Rank(L) / 2;
+        // like the number of vectors enumerated: prec^(3/2) for the glued series
+        // (blocks of rank 3, see ThetaSeriesFast) and prec^(n/2) for ThetaSeries.
+        expo := (Rank(L) ge 6) select 3 / 2 else Rank(L) / 2;
         if e * (Minimum(prec, target_prec) / current_prec)^expo gt remaining then
             vprintf FillGenus, 1 : "Theta series to precision %o would not fit in %o s\n",
                 Minimum(prec, target_prec), remaining;
