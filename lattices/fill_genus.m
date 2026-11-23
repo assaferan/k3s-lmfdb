@@ -446,8 +446,7 @@ enumeration for definite genera of rank >= 3 (see GenusReps in genus_reps.m).}
             //if success then 
             //lat["successive_minima"] := minima[1]; // For now, we throw away the vecs
             //end if;
-            minima, vecs := SuccessiveMinima(L);
-            lat["successive_minima"] := minima;
+            lat["successive_minima"] := SuccessiveMinimaFaster(L);
 
         end if;
         lat["hash"] := "\\N";

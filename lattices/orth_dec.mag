@@ -133,6 +133,20 @@ intrinsic OrthogonalDecompositionFaster(lat::Lat : norm_bd := Infinity()) -> Seq
     return orth_dec(lat: norm_bd := norm_bd);
 end intrinsic;
 
+intrinsic SuccessiveMinimaFaster(L::Lat) -> SeqEnum
+{The successive minima of the positive definite lattice L.  They are computed on the
+summands of an orthogonal decomposition of L and merged: the successive minima of
+an orthogonal sum are the sorted union of those of its summands.}
+    // SuccessiveMinima(I_k + M) enumerates the vectors of I_k up to the largest
+    // minimum of M, e.g. up to norm 13 for I_14 + <13> (79 s at rank 15).
+    comps := [C : C in OrthogonalDecompositionFaster(L) | Rank(C) gt 0];
+    // the summands must span L, not just a sublattice of finite index
+    assert &+[Rank(C) : C in comps] eq Rank(L);
+    assert &*[Determinant(C) : C in comps] eq Determinant(L);
+    mins := &cat[(Rank(C) eq 1) select [Minimum(C)] else SuccessiveMinima(C) : C in comps];
+    return Sort(mins);
+end intrinsic;
+
 function split_1(lat)
   sv := ShortVectors(lat,1,1);
   sub_1 := sub<lat|[x[1]: x in sv]>;

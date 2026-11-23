@@ -223,6 +223,42 @@ function V_best_with_dual(A)
     return sorted[1];
 end function;
 
+// The same choice as V_best_with_dual, computed faster.
+//
+// V_best_with_dual tries the candidates V_ms(A), V_cvp(A), V_ms(Ad), V_cvp(Ad) in
+// this order, the first with a cap of 2^20 vectors, and returns the first
+// smallest one (Sort puts the first of the smallest entries first on lists of at
+// most 4 entries; checked on all 340 patterns).  On a lattice with many short
+// vectors, such as I_k + M, V_ms(A) enumerates about 2^20 vectors before it gives
+// up, 4-8 s at rank 14-16, although V_cvp(A) is small.
+//
+// So compute V_cvp(A) first and cap the others by the smallest set found so far.
+// A candidate can win only if it is no larger than the sets before it in the order
+// above (ties go to the earlier one) and smaller than those after it.  The caps
+// are 2 * bound + 2, and a set is accepted only when it is within the bound: a
+// truncated set from ShortVectors(... : Max := ...) is then never accepted.
+// Falls back to V_best_with_dual when V_cvp(A) gives nothing.
+function V_best_with_dual_fast(A)
+    Ainv := Determinant(A)*A^(-1);
+    Ld, Td := LLL(LatticeWithGram(Ainv));
+    // over Q, as in V_best_with_dual, where the sequence [A, Ad] coerces it
+    Ad := ChangeRing(GramMatrix(Ld), Rationals());
+    assert Ad eq Td*Ainv*Transpose(Td);
+    cvpA :=[Vector(v) : v in V_cvp(A : max_num := 2^20)];
+    if IsEmpty(cvpA) then return V_best_with_dual(A); end if;
+    best := <cvpA, A, false, Td>;
+    // V_ms(A) comes before V_cvp(A): it wins ties.
+    msA := [Vector(v) : v in V_ms(A : max_num := 2*#cvpA + 2)];
+    if not IsEmpty(msA) and #msA le #cvpA then best := <msA, A, false, Td>; end if;
+    // V_ms(Ad) and V_cvp(Ad) come after both: they must be strictly smaller.
+    for Vchar in [V_ms, V_cvp] do
+        b := #best[1];
+        VA := [Vector(v) : v in Vchar(Ad : max_num := 2*b + 2)];
+        if not IsEmpty(VA) and #VA lt b then best := <VA, Ad, true, Td>; end if;
+    end for;
+    return best;
+end function;
+
 function T1(W)
     a := Maximum(Eltseq(W))+1;
     b := a + 1;
@@ -281,7 +317,7 @@ end function;
 
 function U_V(A)
     A := ChangeRing(A, Rationals());
-    VA, A, is_dual, Td := Explode(V_best_with_dual(A));
+    VA, A, is_dual, Td := Explode(V_best_with_dual_fast(A));
     vprintf CanonicalForm, 4 : "VA is %o\n", VA;
     // VA := V_best(A);
     // This is not really needed, we just keep track of the weights
