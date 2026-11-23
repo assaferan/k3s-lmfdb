@@ -19,6 +19,13 @@ function newTwoNeighbors(L, dep)
   O := LineOrbits(G);
   vprint Genus,2: "Number of orbits:", #O;
   TA := 0;
+  // A 2-neighbour nb of L has the same determinant, and nb and L agree at every
+  // odd prime p (both contain L meet nb with index 2), so nb is in the genus of
+  // L exactly when its 2-adic genus is that of L.  Comparing Genus(nb) with
+  // Genus(L) diagonalised both at every prime dividing 2 det, for every
+  // neighbour, and was most of a rank-16 walk.
+  gL2 := LocalGenus(L, 2);
+  same_genus := func<nb | LocalGenus(nb, 2) eq gL2>;
   for o in O do
     v := L ! o[1].1;
     if Norm(v) mod 4 eq 0 and not IsZero(v) then
@@ -30,7 +37,7 @@ function newTwoNeighbors(L, dep)
         nb := Neighbor(L,v,2);
         // I believe the issue here is only that sometimes we go from odd to
         // even and it isn't in the same genus
-        if Genus(nb) eq Genus(L) then
+        if same_genus(nb) then
           vprint Genus,2: "adding new lattice";
           Append(~Lambda,nb);
         end if;
@@ -42,7 +49,7 @@ function newTwoNeighbors(L, dep)
         // AdjoinNeighbor(~TA, ~Lambda, Neighbor(L,v,2), dep);
         try
           nb := Neighbor(L,v,2);
-          if Genus(nb) eq Genus(L) then
+          if same_genus(nb) then
             vprint Genus,2: "adding new lattice";
             Append(~Lambda,nb);
           end if;
