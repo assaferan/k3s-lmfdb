@@ -15,29 +15,52 @@ Attach("my_neighbors.m");
 import "aut_char.mag":aut_graph;
 import "isom.mag":isom_graph;
 
-// A very quick lattice hash.  This is better with a faster
-// OrthogonalDecomposition (cf. my email)
+// The type of an irreducible simply laced root system of rank r with npos
+// positive roots: A_r has r(r+1)/2, D_r (r >= 4) r(r-1), and E_6, E_7, E_8 have
+// 36, 63, 120, so rank and root count determine the type.
+function root_type(r, npos)
+  if npos eq r*(r+1) div 2 then return "A" cat IntegerToString(r); end if;
+  if r ge 4 and npos eq r*(r-1) then return "D" cat IntegerToString(r); end if;
+  if <r, npos> in {<6,36>, <7,63>, <8,120>} then return "E" cat IntegerToString(r); end if;
+  error "impossible root system of rank", r, "with", npos, "positive roots";
+end function;
+
+// A very quick lattice hash: the root system of lat (the multiset of the types
+// of its irreducible components), the torsion of the saturation of the span of
+// the shortest vectors, and the number of vectors of norm 4 (up to sign).
+// The norm-2 vectors of an integral lattice form a simply laced root system,
+// whose irreducible components are the connected components of the graph on
+// the roots joining non-orthogonal pairs.  This used to be computed with
+// OrthogonalDecomposition and an IsIsomorphic test against each Cartan matrix,
+// and the norm-4 count with ShortVectors(lat, 4, 4), together 60% of easy_hash.
 function root_sub(lat)
   rl := {*Strings()|*};
   tor := [Z|];
-  sl := sub<lat|[x[1]: x in ShortVectors(lat,2,2)]>;
-  if Rank(sl) eq 0 then od := []; else
+  sv := [x[1] : x in ShortVectors(lat,2,2)];  // one root of each pair +-r
+  if #sv gt 0 then
     Zn := RSpace(Z,Dimension(lat));
     slzn := sub<Zn|[Eltseq(i): i in ShortestVectors(lat)]>;
     tor := Moduli(Saturation(slzn)/slzn);
-    od := OrthogonalDecomposition(sl);
-  end if;
-  for i in od do
-    sdi := IntegerToString(Dimension(i));
-    for l in ["A","D","E"] do
-      if IsIsomorphic(i,LatticeWithGram(CartanMatrix(l*sdi))) then
-        Include(~rl,l*sdi);
-        continue i;
-      end if;
+    C := Matrix(Z, [Coordinates(v) : v in sv]);
+    IP := C * ChangeRing(GramMatrix(lat), Z) * Transpose(C);
+    n := #sv; comp := [0 : i in [1..n]]; nc := 0;
+    for i in [1..n] do
+      if comp[i] ne 0 then continue; end if;
+      nc +:= 1; comp[i] := nc; stack := [i];
+      while #stack gt 0 do
+        j := stack[#stack]; Prune(~stack);
+        for k in [1..n] do
+          if comp[k] eq 0 and IP[j,k] ne 0 then comp[k] := nc; Append(~stack, k); end if;
+        end for;
+      end while;
     end for;
-    error "impossible root lattice", Eltseq(GramMatrix(lat));
-  end for;
-  return rl,tor,#ShortVectors(lat,4,4);
+    for c in [1..nc] do
+      idx := [i : i in [1..n] | comp[i] eq c];
+      Include(~rl, root_type(Rank(Submatrix(C, idx, [1..Ncols(C)])), #idx));
+    end for;
+  end if;
+  // the theta series counts both v and -v
+  return rl,tor,Coefficient(ThetaSeries(lat,4),4) div 2;
 end function;
 
 // the BV-invariant, as described in Gaetan Chenevier's talk.
