@@ -142,9 +142,14 @@ intrinsic ThetaSeriesFast(L::Lat, N::RngIntElt) -> RngSerPowElt
 the same series as ThetaSeries(L, N): by ThetaSeriesGlued from rank 6 on, where it
 wins (rank 7 at N = 149: ThetaSeries 0.3 s, ThetaSeriesGlued 0.01 s per lattice;
 ThetaSeries cannot reach N = 149 at rank 10-12 at all), and by ThetaSeries below that or for a lattice that is not
-integral.}
+integral.  From rank 14 on it glues blocks of rank 4: with blocks of rank 3 the glue
+group grows to thousands of classes (median 5400 on a rank-16 genus, against 240).}
     if Rank(L) ge 6 and forall{x : x in Eltseq(GramMatrix(L)) | IsIntegral(x)} then
-        return ThetaSeriesGlued(L, N);
+        // 80 theta series each (40 lattices and their duals) of the genera
+        // 14.14.17.d / 15.15.13.17 / 16.16.9.01.61 to N = 149, capped at 30 s each:
+        // BlockRank 3: 418 / 200 / 1762 s, 74 / 76 / 31 finished;
+        // BlockRank 4: 173 / 155 /  336 s, 78 / 79 / 80 finished; same series.
+        return ThetaSeriesGlued(L, N : BlockRank := (Rank(L) ge 14) select 4 else 3);
     end if;
     return ThetaSeries(L, N);
 end intrinsic;

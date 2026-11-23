@@ -49,6 +49,16 @@ for M in [LatticeWithGram(CartanMatrix("A4")), E8, Dual(E8 : Rescale := false), 
         Sprintf("ThetaSeriesFast, rank %o, det %o", Rank(M), Determinant(M)));
 end for;
 
+// from rank 14 on ThetaSeriesFast glues blocks of rank 4: an odd rank-15 lattice
+// (I + J, rescaled dual too) and an even rank-16 one (E8 + D8)
+G := IdentityMatrix(Z, 15) + Matrix(Z, 15, 15, [1 : i in [1..225]]);
+G[15, 15] +:= 2;
+for M in [LatticeWithGram(G), Dual(LatticeWithGram(G)),
+          LatticeWithGram(DiagonalJoin(CartanMatrix("E8"), CartanMatrix("D8")))] do
+    AssertTrue(~results, Eltseq(ThetaSeriesFast(M, 12)) eq Eltseq(ThetaSeries(M, 12)),
+        Sprintf("ThetaSeriesFast, rank %o, det %o", Rank(M), Determinant(M)));
+end for;
+
 // ThetaSeriesIncremental must reach its target, not stop at the last power-of-two step
 // below it (it used to stop at 128 for a target of 150)
 th, prec := ThetaSeriesIncremental(E8, 150, 120);
