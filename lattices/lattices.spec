@@ -11,6 +11,7 @@
     tensor.m
     my_neighbors.m
     neighbours_canonical.mag
+    odd_via_even.m
     orth_dec.mag
     tdesign.m
 

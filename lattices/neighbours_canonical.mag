@@ -369,9 +369,22 @@ function list_genus(pd: bd := Infinity(), p := 2, done := {@@}, silent := false,
   return done, done_hashes, use_aut_graph select aut_graphs else can_forms, mass_left;
 end function;
 
-intrinsic GenusRepresentativesFaster(pd::Lat : bd := Infinity(), p := 2, done := {@@}, silent := true, aut_gp_fn := AutomorphismGroupFaster, nb_fn := newNeighbours, cf_fn := func<x|CanonicalForm(GramMatrix(x))>, use_aut_graph := true, hash := easy_hash, thorough := true, find_canonical := false) -> SeqEnum, SeqEnum, SeqEnum, FldRatElt
-{Find the representatives of the genus of the lattice pd.}
-    if (IsEven(Determinant(pd)) and not IsEven(pd)) and (p eq 2) then p := 3; end if;
+intrinsic GenusRepresentativesFaster(pd::Lat : bd := Infinity(), p := 2, done := {@@}, silent := true, aut_gp_fn := AutomorphismGroupFaster, nb_fn := newNeighbours, cf_fn := func<x|CanonicalForm(GramMatrix(x))>, use_aut_graph := true, hash := easy_hash, thorough := true, find_canonical := false, odd_via_even_rank := 12) -> SeqEnum, SeqEnum, SeqEnum, FldRatElt
+{Find the representatives of the genus of the lattice pd.  An odd lattice of even
+determinant cannot be walked at p = 2; from rank odd_via_even_rank on, its genus
+is found through the genus of its even sublattice instead (see odd_via_even.m),
+and only the first return value is set.  On the 346 such definite genera of rank
+3-12 in the census the two routes agree; the even sublattice is the faster one
+from rank 12 on (592 s vs 703 s in total there), and above it the p = 3 walk
+becomes hopeless (60-90 s per lattice expanded at rank 16).}
+    if (IsEven(Determinant(pd)) and not IsEven(pd)) and (p eq 2) then
+        if Rank(pd) ge odd_via_even_rank and #done eq 0 then
+            reps, ok := GenusRepresentativesOddViaEven(pd);
+            if ok then return {@ x : x in reps @}, [], [], Rationals() ! 0; end if;
+            vprintf Genus, 1: "odd-via-even: mass does not check, walking at p = 3\n";
+        end if;
+        p := 3;
+    end if;
     mass_left := Mass(pd);
     while (mass_left gt 0) do
       // This could be done better, where at each step we can reuse the hashes we already found, 
