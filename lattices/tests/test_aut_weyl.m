@@ -41,4 +41,28 @@ for c in cases do
                 name cat ": AutomorphismGroupWeyl generators generate the full group");
 end for;
 
+// IsIsometricWeyl: scrambled copies are isometric; E8+E8 and the even
+// unimodular D16+ both have 480 roots but are not isometric; Z^4 + A2 against
+// D4 + Z^2 has the same rank but not the same roots; a rootless pair.
+// D16+ = D16 + Z h, h = (1/2, ..., 1/2), inside Q^16 with the standard form
+Q := Rationals();
+B := [Vector(Q, [j eq i select 1 else (j eq i+1 select -1 else 0) : j in [1..16]]) : i in [1..15]]
+     cat [Vector(Q, [j ge 15 select 1 else 0 : j in [1..16]]), Vector(Q, [1/2 : j in [1..16]])];
+M := Matrix(B); Hm := ChangeRing(HermiteForm(Matrix(Integers(), 2 * M)), Q) / 2;
+Bas := Matrix([Hm[i] : i in [1..16]]);
+D16p := LatticeWithGram(ChangeRing(LLLGram(Bas * Transpose(Bas)), Integers()));
+AssertTrue(~results, Determinant(D16p) eq 1 and IsEven(D16p) and #ShortVectors(D16p, 2) eq 240, "D16+ is even unimodular with 480 roots");
+E8E8 := DirectSum(cartan("E8"), cartan("E8"));
+pairs := [* <"E8+E8 vs scrambled", E8E8, scramble(E8E8), true>,
+            <"D4+A2 vs scrambled", DirectSum(cartan("D4"), cartan("A2")),
+                scramble(DirectSum(cartan("D4"), cartan("A2"))), true>,
+            <"odd4 vs scrambled", odd4, scramble(odd4), true>,
+            <"rootless vs scrambled", rootless, scramble(rootless), true>,
+            <"E8+E8 vs D16+ (480 roots each)", E8E8, D16p, false>,
+            <"Z^4+A2 vs D4+Z^2", DirectSum(StandardLattice(4), cartan("A2")),
+                DirectSum(cartan("D4"), StandardLattice(2)), false> *];
+for c in pairs do
+    AssertEqual(~results, IsIsometricWeyl(c[2], c[3]), c[4], "IsIsometricWeyl: " cat c[1]);
+end for;
+
 Report(~results, "test_aut_weyl");

@@ -211,7 +211,7 @@ import "neighbours_canonical.mag":root_sub,easy_hash;
 
 bd := Infinity(); p := 2; done := {@@}; silent := false; aut_gp_fn := AutomorphismGroupFaster; nb_fn := newNeighbours; cf_fn := func<x|CanonicalForm(GramMatrix(x))>; hash := easy_hash; use_aut_graph := true; find_canonical := false;
 */
-function list_genus(pd: bd := Infinity(), p := 2, done := {@@}, silent := false, aut_gp_fn := AutomorphismGroupFaster, nb_fn := newNeighbours, cf_fn := func<x|CanonicalForm(GramMatrix(x))>, use_aut_graph := true, hash := easy_hash, thorough := true, find_canonical := false, mass_left := Mass(pd))
+function list_genus(pd: bd := Infinity(), p := 2, done := {@@}, silent := false, aut_gp_fn := AutomorphismGroupFaster, nb_fn := newNeighbours, cf_fn := func<x|CanonicalForm(GramMatrix(x))>, use_aut_graph := true, isom_weyl := true, hash := easy_hash, thorough := true, find_canonical := false, mass_left := Mass(pd))
   if Rank(pd) eq 2 and p eq 2 and IsEven(Determinant(pd)) then
     vprintf Genus, 1 : "Cannot run for lattices of rank 2 with even determinant for p = 2\n";
     return {@pd@},[],[],1;
@@ -301,7 +301,17 @@ function list_genus(pd: bd := Infinity(), p := 2, done := {@@}, silent := false,
       hashed_inds := [[x-(x lt ind select 0 else 1): x in h|x ne ind]: h in hashed_inds];
       // assert forall{i: i in hashed_inds[j], j in [1..#hashed_inds]|hash(hashed[i]) eq known_hashes[j]};
       is_new := true;
-      if use_aut_graph then
+      if isom_weyl then
+        // isometry up to the Weyl group (IsIsometricWeyl, aut_weyl.m).  On rank-16
+        // genera that time out, the aut_graph test below took 33-67% of the walk;
+        // with this one, 5 of 8 such genera finished in 300 s.
+        for i in [1..#done] do
+          if done_hashes[i] eq h and IsIsometricWeyl(done[i], lat) then
+            is_new := false;
+            break i;
+          end if;
+        end for;
+      elif use_aut_graph then
         for i in [1..#done] do
           if done_hashes[i] eq h then
             if not IsDefined(aut_graphs,i) then
@@ -369,15 +379,17 @@ function list_genus(pd: bd := Infinity(), p := 2, done := {@@}, silent := false,
   return done, done_hashes, use_aut_graph select aut_graphs else can_forms, mass_left;
 end function;
 
-intrinsic GenusRepresentativesFaster(pd::Lat : bd := Infinity(), p := 2, done := {@@}, silent := true, aut_gp_fn := AutomorphismGroupFaster, nb_fn := newNeighbours, cf_fn := func<x|CanonicalForm(GramMatrix(x))>, use_aut_graph := true, hash := easy_hash, thorough := true, find_canonical := false) -> SeqEnum, SeqEnum, SeqEnum, FldRatElt
-{Find the representatives of the genus of the lattice pd.}
+intrinsic GenusRepresentativesFaster(pd::Lat : bd := Infinity(), p := 2, done := {@@}, silent := true, aut_gp_fn := AutomorphismGroupFaster, nb_fn := newNeighbours, cf_fn := func<x|CanonicalForm(GramMatrix(x))>, use_aut_graph := true, isom_weyl := true, hash := easy_hash, thorough := true, find_canonical := false) -> SeqEnum, SeqEnum, SeqEnum, FldRatElt
+{Find the representatives of the genus of the lattice pd.  With isom_weyl (the
+default), lattices with equal hashes are compared by IsIsometricWeyl; otherwise
+by aut_graph (use_aut_graph) or by canonical forms.}
     if (IsEven(Determinant(pd)) and not IsEven(pd)) and (p eq 2) then p := 3; end if;
     mass_left := Mass(pd);
     while (mass_left gt 0) do
       // This could be done better, where at each step we can reuse the hashes we already found, 
       // but at the moment could not make it work, so just updating the mass_left each time.
       silent := (GetVerbose("Genus") ge 1) select false else true;
-      done, done_hashes, cans, mass_left := list_genus(pd: bd := bd, p := p, done := done, silent := silent, aut_gp_fn := aut_gp_fn, nb_fn := nb_fn, cf_fn := cf_fn, use_aut_graph := use_aut_graph, hash := hash, thorough := thorough, find_canonical := find_canonical, mass_left := mass_left);
+      done, done_hashes, cans, mass_left := list_genus(pd: bd := bd, p := p, done := done, silent := silent, aut_gp_fn := aut_gp_fn, nb_fn := nb_fn, cf_fn := cf_fn, use_aut_graph := use_aut_graph, isom_weyl := isom_weyl, hash := hash, thorough := thorough, find_canonical := find_canonical, mass_left := mass_left);
       vprintf Genus, 1: "p = %o, #reps = %o, mass_left = %o\n", p, #done, RealField(5)!mass_left; 
       p := NextPrime(p);
     end while;
