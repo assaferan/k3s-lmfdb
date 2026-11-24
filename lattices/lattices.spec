@@ -1,5 +1,6 @@
 {
     aut_char.mag
+    aut_weyl.m
     canonical_form.m
     create_label.m
     name_lattices.m

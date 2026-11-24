@@ -512,7 +512,7 @@ function aut_max_ind(lat,d: max_ind := 10, aut_sub := false,force := false)
   return aut_lat, lift_sub, ker;
 end function;
 
-function aut_orth_dec(od,lat)
+function aut_orth_dec(od,lat : use_weyl := true)
     vprint Lattice, 1: "using orthogonal decomposition to calculate automorphism group";
     // eventually replace this with a custom isomorphism tester,
     // e.g., based on the canonical forms
@@ -520,7 +520,7 @@ function aut_orth_dec(od,lat)
     inds := [x: x in [1..#od]|Index(same_reps,x) eq x];
     od_gr := [LatticeWithGram(GramMatrix(i)): i in od];
     vprint Lattice, 2: "finding the automorphism groups of the components";
-    aut_reps := [aut_faster(od_gr[i]:use_orth_dec := false): i in inds];
+    aut_reps := [aut_faster(od_gr[i]:use_orth_dec := false, use_weyl := use_weyl): i in inds];
     // now we need to put the pieces together
     bases := [Basis(i): i in od];
     invmat := Matrix(&cat bases)^-1;
@@ -563,6 +563,13 @@ function aut_orth_dec(od,lat)
     assert forall{x: x in aut_gens|x*g*Transpose(x) eq g} where g is GramMatrix(lat);
 
     naut := sub<GL(Rank(lat),Z)|aut_gens>;
+    // A positive definite lattice decomposes uniquely into indecomposables, so
+    // Aut(lat) is the product over isomorphism classes of components C, taken m
+    // times, of Aut(C) wr S_m.  Recording the order saves Magma from computing it
+    // from the generators, which can take far longer than finding them.
+    AssertAttribute(naut, "Order",
+        &*[Integers() | #aut_reps[k]^m * Factorial(m)
+           where m := #[x : x in [1..#od] | same_reps[x] eq inds[k]] : k in [1..#inds]]);
     if assigned lat`AutomorphismGroup then
       assert lat`AutomorphismGroup eq naut;
     else
@@ -581,17 +588,27 @@ end function;
 // orth_bd indicates how hard to look for an orthogonal decomposition
 // codim_bd is the bound on how small a characteristic sublattice we can use
 // return values are the lattice(s) we decompose into or reduce to
-function aut_faster(lat: use_orth_dec := true, orth_bd := 10, codim_bd := 4)
+function aut_faster(lat: use_orth_dec := true, orth_bd := 10, codim_bd := 4, use_weyl := true)
   if assigned lat`AutomorphismGroup then return lat`AutomorphismGroup; end if;
   if use_orth_dec then
     od := OrthogonalDecompositionFaster(lat: norm_bd := orth_bd*(IsEven(lat) select 2 else 1));
     assert Determinant(Matrix(&cat [Basis(i): i in od])) in [1,-1];
     if #od gt 1 then 
-      lat`AutomorphismGroup := aut_orth_dec(od,lat);
+      lat`AutomorphismGroup := aut_orth_dec(od,lat : use_weyl := use_weyl);
       return lat`AutomorphismGroup, od, #od;
     end if;
   end if;
   
+  // An indecomposable lattice (or a component) with roots: Aut = W(R) x| Stab(rho)
+  // (aut_weyl.m).  On 284 rank-16 neighbours from a genus walk this took 5.8 s,
+  // against 32 s for Magma's AutomorphismGroup and minutes for the search below;
+  // on one representative of each of the 770 genera of rank 9-16 it was never
+  // slower than the search below.
+  if use_weyl and #ShortVectors(lat, 2) gt 0 then
+    lat`AutomorphismGroup := AutomorphismGroupWeyl(lat);
+    return lat`AutomorphismGroup, [lat], 0;
+  end if;
+
   r := Rank(lat);
   rs := RSpace(Z,r);
   keep := sub<lat|>;
@@ -740,9 +757,11 @@ function aut_graph(lat: hom_up := [Eltseq(i): i in Rows(IdentityMatrix(Z,Rank(la
   return newgr;
 end function;
 
-intrinsic AutomorphismGroupFaster(lat::Lat : use_orth_dec := true, orth_bd := 10, codim_bd := 4) -> GrpMat
-{ Return the automorphism group of the lattice lat.}
-    return aut_faster(lat: use_orth_dec := use_orth_dec, orth_bd := orth_bd, codim_bd := 4);
+intrinsic AutomorphismGroupFaster(lat::Lat : use_orth_dec := true, orth_bd := 10, codim_bd := 4, use_weyl := true) -> GrpMat
+{ Return the automorphism group of the lattice lat.  With use_weyl, every
+indecomposable piece that has vectors of norm 1 or 2 goes through
+AutomorphismGroupWeyl.}
+    return aut_faster(lat: use_orth_dec := use_orth_dec, orth_bd := orth_bd, codim_bd := 4, use_weyl := use_weyl);
 end intrinsic;
 
 
