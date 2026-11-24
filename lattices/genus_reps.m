@@ -916,9 +916,16 @@ end intrinsic;
  * Method dispatch (moved from fill_genus.m)
  ****************************************************************************/
 
-intrinsic UseOrthHeuristic(n::RngIntElt, mass::Any) -> BoolElt
+intrinsic UseOrthHeuristic(n::RngIntElt, mass::Any : Even := false) -> BoolElt
 {Whether the orbit method should be preferred over the p-neighbour walk for a
 definite genus of rank n and Minkowski-Siegel mass mass (pass 0 when unknown).
+Set Even when the genus is even.
+
+Even genera of rank 15 and 16 use the walk (measured 2026-11 on all 31 such
+genera of the census, with the 300 s production timeout and the p = 2
+neighbour and hash speedups: the walk enumerated all 31 in 379 s in total, the
+orbit method 29 in 1999 s).  This is not known to hold at higher rank, so from
+rank 17 even genera keep the orbit method.
 
 Tuned on benchmarks (2026-07): the orbit method wins from rank 15 (Kneser cost
 grows like 2^rank), and at any rank once the genus is genuinely large (27x
@@ -930,6 +937,7 @@ trip it -- which matches the benchmarks, where the neighbour walk wins that
 regime anyway.  Both measured crossover regimes (high rank at small
 determinant, large smooth determinant at low rank with h in the hundreds)
 satisfy mass >= 5; be wary of reading the threshold as "class number >= 5".}
+    if Even and n in [15, 16] then return false; end if;
     if n ge 15 then return true; end if;
     if Type(mass) in [RngIntElt, FldRatElt] and mass ge 5 then return true; end if;
     return false;

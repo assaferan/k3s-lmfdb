@@ -100,6 +100,11 @@ AssertTrue(~results, not UseOrthHeuristic(14, 1/2), "UseOrthHeuristic(14, 1/2): 
 AssertTrue(~results, UseOrthHeuristic(15, 1/2), "UseOrthHeuristic(15, 1/2): true");
 AssertTrue(~results, UseOrthHeuristic(6, 128), "UseOrthHeuristic(6, 128): true");
 AssertTrue(~results, not UseOrthHeuristic(6, 0), "UseOrthHeuristic(6, 0): false");
+// Even genera of rank 15 and 16 use the walk, whatever the mass; not beyond.
+AssertTrue(~results, not UseOrthHeuristic(15, 1/2 : Even := true), "UseOrthHeuristic(15, 1/2 : Even): false");
+AssertTrue(~results, not UseOrthHeuristic(16, 128 : Even := true), "UseOrthHeuristic(16, 128 : Even): false");
+AssertTrue(~results, UseOrthHeuristic(17, 1/2 : Even := true), "UseOrthHeuristic(17, 1/2 : Even): true");
+AssertTrue(~results, UseOrthHeuristic(6, 128 : Even := true), "UseOrthHeuristic(6, 128 : Even): true");
 
 // The dispatch intrinsic agrees on a definite lattice...
 ok, reps := GenusReps(DirectSum(E6, E8) : Timeout := 600);

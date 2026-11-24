@@ -183,7 +183,7 @@ enumeration for definite genera of rank >= 3 (see GenusReps in genus_reps.m).}
         // refined by the rank/mass heuristic (the neighbour walk stays the default
         // for small class numbers at low rank, where it wins).
         genus_success, reps, orth_prov := GenusReps(L0 : Timeout := timeout,
-            UseOrth := use_orth and (force_orth or UseOrthHeuristic(n, genus_mass)));
+            UseOrth := use_orth and (force_orth or UseOrthHeuristic(n, genus_mass : Even := IsEven(L0))));
     end if;
     advanced["class_number"] := "\\N";
     advanced["adjacency_matrix"] := "\\N";

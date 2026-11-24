@@ -88,8 +88,9 @@ if useorth and #label_list gt 1 then
                 gm := StringToInteger(mp[1]) / StringToInteger(mp[2]);
             end if;
             // only pre-warm genera that the dispatch will route to the orbit method
-            if not (forceorth or UseOrthHeuristic(n, gm)) then continue; end if;
-            Append(~batch, GramStringToLat(data[repi], n));
+            Lg := GramStringToLat(data[repi], n);
+            if not (forceorth or UseOrthHeuristic(n, gm : Even := IsEven(Lg))) then continue; end if;
+            Append(~batch, Lg);
         end for;
         if #batch gt 1 then
             _ := GenusRepresentativesOrthBatch(batch);
