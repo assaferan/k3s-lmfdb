@@ -78,27 +78,46 @@ order, so #A costs nothing.}
     return A;
 end intrinsic;
 
-// <number of roots, G, F> for L, cached on L
+// <k, M, number of roots of M, G, F> for L, cached on L.  L = Z^k + M with Z^k
+// the span of the vectors of norm 1: in an integral lattice two of them are
+// orthogonal or equal up to sign, and x - (x, e) e is in L for each of them, so
+// they split off orthogonally.  G is the Gram matrix of M (LLL-reduced) and F
+// its form from rho_form, or G when M has no roots.
 function weyl_forms(L)
     if not assigned L`WeylForms then
-        G := ChangeRing(GramMatrix(L), Integers());
-        roots := lattice_roots(L);
-        L`WeylForms := #roots eq 0 select <0, G, G> else <#roots, G, rho_form(G, roots)>;
+        ones := [x[1] : x in ShortVectors(L, 1, 1)];
+        if #ones eq 0 then
+            k := 0; M := L;
+        else
+            E := sub<L | ones>;
+            k := Rank(E);
+            M := OrthogonalComplementFaster(L, E);
+        end if;
+        G := Rank(M) eq 0 select ZeroMatrix(Integers(), 0, 0)
+             else LLLGram(ChangeRing(GramMatrix(M), Integers()));
+        M := LatticeWithGram(G);
+        roots := Rank(M) eq 0 select [] else lattice_roots(M);
+        L`WeylForms := <k, M, #roots, G, #roots eq 0 select G else rho_form(G, roots)>;
     end if;
     return L`WeylForms;
 end function;
 
 intrinsic IsIsometricWeyl(L1::Lat, L2::Lat) -> BoolElt
 {Whether L1 and L2 are isometric, computed up to the Weyl group of their roots
-(vectors of norm 1 and 2).  An isometry carries a Weyl chamber of L1 to one of
-L2, and W(R2) is transitive on those, so L1 and L2 are isometric exactly when
-some isometry carries rho_1 to rho_2; Plesken-Souvignier on F_i = 2G_i + u_i
-u_i^T, with G_i as extra form, decides that.  The forms are cached on the
-lattices, so testing one lattice against many costs one form each.  Without
-roots this is IsIsometric(L1, L2).}
+(vectors of norm 1 and 2).  First L_i = Z^k_i + M_i, with Z^k_i the span of the
+vectors of norm 1, so L1 and L2 are isometric exactly when k_1 = k_2 and M_1 and
+M_2 are.  An isometry carries a Weyl chamber of M_1 to one of M_2, and W(R2) is
+transitive on those, so M_1 and M_2 are isometric exactly when some isometry
+carries rho_1 to rho_2; Plesken-Souvignier on F_i = 2G_i + u_i u_i^T, with G_i
+as extra form, decides that.  The forms are cached on the lattices, so testing
+one lattice against many costs one form each.  Without roots this is
+IsIsometric(M_1, M_2).}
     w1 := weyl_forms(L1); w2 := weyl_forms(L2);
-    if w1[1] ne w2[1] then return false; end if;
-    if w1[1] eq 0 then return IsIsometric(L1, L2); end if;
-    S := [PowerSet(Parent(w1[2])) | ];
-    return IsIsometric(LatticeWithGram(w1[3]), [w1[2]], S, LatticeWithGram(w2[3]), [w2[2]], S);
+    if w1[1] ne w2[1] or w1[3] ne w2[3] then return false; end if;
+    // splitting off Z^k first matters: a lattice Z^15 + (rank 1) took 38 s
+    // without it, as the rho of the type-B roots of Z^k is a poor guide
+    if Rank(w1[2]) eq 0 then return true; end if;
+    if w1[3] eq 0 then return IsIsometric(w1[2], w2[2]); end if;
+    S := [PowerSet(Parent(w1[4])) | ];
+    return IsIsometric(LatticeWithGram(w1[5]), [w1[4]], S, LatticeWithGram(w2[5]), [w2[4]], S);
 end intrinsic;

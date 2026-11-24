@@ -60,7 +60,18 @@ pairs := [* <"E8+E8 vs scrambled", E8E8, scramble(E8E8), true>,
             <"rootless vs scrambled", rootless, scramble(rootless), true>,
             <"E8+E8 vs D16+ (480 roots each)", E8E8, D16p, false>,
             <"Z^4+A2 vs D4+Z^2", DirectSum(StandardLattice(4), cartan("A2")),
-                DirectSum(cartan("D4"), StandardLattice(2)), false> *];
+                DirectSum(cartan("D4"), StandardLattice(2)), false>,
+            // Z^k split off first
+            <"Z^15+[3] vs scrambled", DirectSum(StandardLattice(15), LatticeWithGram(Matrix(Integers(), 1, 1, [3]))),
+                scramble(DirectSum(StandardLattice(15), LatticeWithGram(Matrix(Integers(), 1, 1, [3])))), true>,
+            <"Z^16 vs scrambled", StandardLattice(16), scramble(StandardLattice(16)), true>,
+            <"Z^3+E8 vs scrambled", DirectSum(StandardLattice(3), cartan("E8")),
+                scramble(DirectSum(StandardLattice(3), cartan("E8"))), true>,
+            <"Z^3+E8 vs Z^3+D8 (other Z^k part)", DirectSum(StandardLattice(3), cartan("E8")),
+                DirectSum(StandardLattice(3), cartan("D8")), false>,
+            <"Z^2+A2 vs Z^1+[1,0;0,3] (k differs)", DirectSum(StandardLattice(2), cartan("A2")),
+                DirectSum(StandardLattice(1), LatticeWithGram(Matrix(Integers(), 3, 3, [2,1,0, 1,2,0, 0,0,3]))), false>,
+            <"odd4+Z^2 vs scrambled", DirectSum(odd4, StandardLattice(2)), scramble(DirectSum(odd4, StandardLattice(2))), true> *];
 for c in pairs do
     AssertEqual(~results, IsIsometricWeyl(c[2], c[3]), c[4], "IsIsometricWeyl: " cat c[1]);
 end for;
