@@ -108,10 +108,21 @@ intrinsic newNeighbours(L::Lat, p::RngIntElt :
      if (Determinant(L) mod p) eq 0 then
        good := false;
      end if; 
+     // Magma's IsNonsingularVector(v, p) asks whether some partial derivative of
+     // the quadratic form of L (halved when p = 2 and L is even) is nonzero at v
+     // mod p.  Those derivatives are the entries of 2 G v, or of G v in the
+     // halved case, so for p = 2 and L odd it is always false.  It rebuilt the
+     // form as a polynomial on every call, 12-22% of a rank-16 walk.
+     Gp := ChangeRing(ChangeRing(GramMatrix(L), Z), GF(p));
+     if p eq 2 and not IsEven(L) then
+       nonsingular := func<v | false>;
+     else
+       nonsingular := func<v | not IsZero(Vector(GF(p), Coordinates(v)) * Gp)>;
+     end if;
      for o in O do
        v := Adjust(L!o[1].1,p);
        if not IsZero(v) then
-         if good or IsNonsingularVector(v,p) then
+         if good or nonsingular(v) then
            vprint CanonicalForm,4: "found new neighbour";
            Append(~Lambda, Neighbor(L, v, p));
          end if;   
