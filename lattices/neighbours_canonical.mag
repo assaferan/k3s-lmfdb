@@ -369,14 +369,16 @@ function list_genus(pd: bd := Infinity(), p := 2, done := {@@}, silent := false,
   return done, done_hashes, use_aut_graph select aut_graphs else can_forms, mass_left;
 end function;
 
-intrinsic GenusRepresentativesFaster(pd::Lat : bd := Infinity(), p := 2, done := {@@}, silent := true, aut_gp_fn := AutomorphismGroupFaster, nb_fn := newNeighbours, cf_fn := func<x|CanonicalForm(GramMatrix(x))>, use_aut_graph := true, hash := easy_hash, thorough := true, find_canonical := false, odd_via_even_rank := 12) -> SeqEnum, SeqEnum, SeqEnum, FldRatElt
+intrinsic GenusRepresentativesFaster(pd::Lat : bd := Infinity(), p := 2, done := {@@}, silent := true, aut_gp_fn := AutomorphismGroupFaster, nb_fn := newNeighbours, cf_fn := func<x|CanonicalForm(GramMatrix(x))>, use_aut_graph := true, hash := easy_hash, thorough := true, find_canonical := false, odd_via_even_rank := 7) -> SeqEnum, SeqEnum, SeqEnum, FldRatElt
 {Find the representatives of the genus of the lattice pd.  An odd lattice of even
 determinant cannot be walked at p = 2; from rank odd_via_even_rank on, its genus
 is found through the genus of its even sublattice instead (see odd_via_even.m),
-and only the first return value is set.  On the 346 such definite genera of rank
-3-12 in the census the two routes agree; the even sublattice is the faster one
-from rank 12 on (592 s vs 703 s in total there), and above it the p = 3 walk
-becomes hopeless (60-90 s per lattice expanded at rank 16).}
+and only the first return value is set.  The threshold is measured on 433 such
+definite genera of mass < 5 and rank 3-11 from the July 2026 census (up to 50 per
+rank, 300 s each): the two routes give the same class numbers; the even sublattice
+cuts the total time by 39% at rank 7 and finishes twice as many genera at ranks
+8-11, while at ranks 3-6 it is 12-26% slower per genus (at most 2 s).  At rank 16
+the p = 3 walk takes 60-90 s per lattice expanded.}
     if (IsEven(Determinant(pd)) and not IsEven(pd)) and (p eq 2) then
         if Rank(pd) ge odd_via_even_rank and #done eq 0 then
             reps, ok := GenusRepresentativesOddViaEven(pd);
