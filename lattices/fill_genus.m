@@ -95,10 +95,12 @@ function RescaledDualNF(L)
 end function;
 
 function adjacency_matrix_of(G, p)
-    // Wrapped so it can run under TimeoutCall: AdjacencyMatrix walks the p-neighbour graph
-    // in a C-level builtin that does not yield to Magma's Alarm, so it needs the HardKill
-    // watchdog to be bounded (it can take >75s for a single rank-8 genus).
-    return AdjacencyMatrix(G, p);
+    // Wrapped so it can run under TimeoutCall: the p-neighbour graph is walked inside
+    // C-level builtins (automorphism groups, isometry tests) that do not yield to
+    // Magma's Alarm, so it needs the HardKill watchdog to be bounded.
+    // NeighbourAdjacencyMatrix (adjacency.m), not Magma's AdjacencyMatrix, which
+    // returns the zero matrix for every odd genus at p = 2.
+    return NeighbourAdjacencyMatrix([L : L in G`Representatives], p);
 end function;
 
 function SphereVolume(n)
