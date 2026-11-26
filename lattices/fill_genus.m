@@ -1,11 +1,12 @@
 declare verbose FillGenus, 1;
 
-function hecke_primes(rank)
-    if rank lt 8 then
-        return [2,3,5];
-    else
-        return [2];
-    end if;
+// The primes p for which FillGenus stores the p-neighbour adjacency (Hecke) matrix.
+// p = 2 is left out for odd genera: Magma's AdjacencyMatrix(G, 2) returns the zero
+// matrix for every odd genus (Magma-Maths/Magma#496), which would be stored as
+// "no 2-neighbours".  So an odd genus of rank >= 8 gets no adjacency data.
+function hecke_primes(rank, is_even)
+    ps := rank lt 8 select [2,3,5] else [2];
+    return is_even select ps else [p : p in ps | p ne 2];
 end function;
 
 intrinsic StringToReal(s::MonStgElt) -> RngIntElt
@@ -162,6 +163,7 @@ enumeration for definite genera of rank >= 3 (see GenusReps in genus_reps.m).}
     rep := "[" * rep[2..#rep - 1] * "]"; // Switch to square brackets
     gram0 := Matrix(K, n, eval rep);
     L0 := LWG(gram0 : CheckPositive := false);
+    is_even := forall{i : i in [1..n] | IsEven(Integers() ! gram0[i,i])};
     vprintf FillGenus, 1 : "Computing genus representatives...";
     reps := [];
     // masslimit: a definite genus of mass M has class number on the order of M, so a
@@ -212,11 +214,11 @@ enumeration for definite genera of rank >= 3 (see GenusReps in genus_reps.m).}
         // work budget), an adaptive cutoff that captures both the rank and class-number
         // dependence, rather than a crude cap on either alone.  The class number is still
         // recorded, and pneighbors below is emitted only when the matrix exists.
-        adj_work := #reps * (&+[Integers() | p^Maximum(n-2, 0) : p in hecke_primes(n)]);
-        have_adjacency := (n eq s) and ((adjlimit le 0) or (adj_work le adjlimit));
+        adj_work := #reps * (&+[Integers() | p^Maximum(n-2, 0) : p in hecke_primes(n, is_even)]);
+        have_adjacency := (n eq s) and #hecke_primes(n, is_even) gt 0 and ((adjlimit le 0) or (adj_work le adjlimit));
         if have_adjacency then
           adj_ok := true;
-          for p in hecke_primes(n) do
+          for p in hecke_primes(n, is_even) do
             vprintf FillGenus, 1 : "%o:", p;
             // Bound the adjacency computation: it is an uninterruptible builtin that can
             // run for well over a minute on a single high-rank genus, so it needs the
@@ -551,7 +553,7 @@ enumeration for definite genera of rank >= 3 (see GenusReps in genus_reps.m).}
         lat := L;
         if have_adjacency then   // pneighbors are read off the Hecke matrix, so only when it was computed
             pNeighbors := AssociativeArray();
-            for p in hecke_primes(n) do
+            for p in hecke_primes(n, is_even) do
                 // !!! TODO - check that permutation is applied in the right direction
                 pNeighbors[p] := ["\"" * lats[j]["label"] * "\"" : j in [1..#lats] | hecke_mats[p][idx^perm,j^perm] ne 0];
             end for;
