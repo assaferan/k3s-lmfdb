@@ -16,26 +16,34 @@ function reps_of(L)
     return [LatticeWithGram(LLLGram(ChangeRing(GramMatrix(M), Integers()))) : M in GenusRepresentatives(L)];
 end function;
 
-function magma_adj(reps, p)
-    G := Genus(reps[1]);
-    G`Representatives := reps; G`IsNatural := true;
-    return AdjacencyMatrix(G, p);
-end function;
+// Order-independent fingerprint of an adjacency matrix: the order of the
+// representatives depends on GenusRepresentatives and on the Magma version.
+fingerprint := func<A | <CharacteristicPolynomial(A), Sort(Eltseq(A))>>;
 
 function hecke_relation(A, reps)
     au := [#AutomorphismGroup(L) : L in reps];
     return forall{<i, j> : i, j in [1..#reps] | A[i, j] * au[i] eq A[j, i] * au[j]};
 end function;
 
-// even genera and odd primes: agree with Magma
-for c in [* <"E8+A1", DirectSum(cartan("E8"), cartan("A1")), [2, 3]>,
-            <"E7+A2", DirectSum(cartan("E7"), cartan("A2")), [2, 3, 5]>,
-            <"Z^9", StandardLattice(9), [3, 5]>,
-            <"Z^8+[3]", DirectSum(StandardLattice(8), LatticeWithGram(Matrix(Integers(), 1, 1, [3]))), [3, 5]> *] do
+// even genera and odd primes, where Magma's AdjacencyMatrix is right: its
+// matrices, from V2.30-1.  (CI runs V2.29-4, where AdjacencyMatrix itself fails
+// at p = 2 with "Invalid attribute 'IsNatural'", so they are not recomputed.)
+expected := [* <"E8+A1", DirectSum(cartan("E8"), cartan("A1")),
+                 [* <2, [255]>, <3, [3280]> *]>,
+               <"E7+A2", DirectSum(cartan("E7"), cartan("A2")),
+                 [* <2, [252, 120, 3, 135]>, <3, [3304, 2240, 56, 1120]>, <5, [95760, 75840, 1896, 21816]> *]>,
+               <"Z^9", StandardLattice(9),
+                 [* <3, [3024, 1920, 256, 1360]>, <5, [88440, 69120, 9216, 28536]> *]>,
+               <"Z^8+[3]", DirectSum(StandardLattice(8), LatticeWithGram(Matrix(Integers(), 1, 1, [3]))),
+                 [* <3, [1568, 432, 0, 1792, 2920, 2240, 0, 8, 1120]>,
+                    <5, [34680, 15120, 17280, 62720, 82320, 60480, 256, 216, 19896]> *]> *];
+for c in expected do
     reps := reps_of(c[2]);
-    for p in c[3] do
-        AssertTrue(~results, NeighbourAdjacencyMatrix(reps, p) eq magma_adj(reps, p),
-              Sprintf("%o, p = %o: agrees with AdjacencyMatrix", c[1], p));
+    h := #reps;
+    for e in c[3] do
+        A := NeighbourAdjacencyMatrix(reps, e[1]);
+        AssertTrue(~results, fingerprint(A) eq fingerprint(Matrix(Integers(), h, h, e[2])),
+              Sprintf("%o, p = %o: AdjacencyMatrix's matrix up to the order of the classes", c[1], e[1]));
     end for;
 end for;
 
@@ -43,7 +51,6 @@ end for;
 // of weight 4 and 8, each with two neighbours, so 270 neighbours per class.
 reps := [StandardLattice(9), DirectSum(cartan("E8"), StandardLattice(1))];
 A := NeighbourAdjacencyMatrix(reps, 2);
-AssertTrue(~results, IsZero(magma_adj(reps, 2)), "Z^9, p = 2: Magma's AdjacencyMatrix is zero (Magma-Maths/Magma#496)");
 AssertTrue(~results, A eq Matrix(Integers(), 2, 2, [252, 135, 18, 135]), "Z^9, p = 2: matrix");
 AssertTrue(~results, hecke_relation(A, reps), "Z^9, p = 2: Hecke relation");
 
