@@ -15,6 +15,20 @@ function char_norm_mod8(G)
   return InnerProduct(wz * G, wz) mod 8;
 end function;
 
+// The 2-neighbour {x in L : (x, w) even} + Z w/2 of the integral lattice L,
+// for w in L with w.w = 0 mod 4 and (w, L) not in 2Z.
+function two_neighbour(L, w)
+  G := ChangeRing(GramMatrix(L), Z);
+  n := Nrows(G);
+  c := Vector(Z, Coordinates(w));
+  K := Kernel(Matrix(GF(2), n, 1, Eltseq(c * G)));
+  Lw := Matrix(Z, [Eltseq(ChangeRing(b, Z)) : b in Basis(K)] cat
+                  [Eltseq(2 * x) : x in Rows(IdentityMatrix(Z, n))]);
+  H := HermiteForm(VerticalJoin(2 * Lw, Matrix(Z, 1, n, Eltseq(c))));
+  B := ChangeRing(Submatrix(H, 1, 1, n, n), Rationals()) / 2;
+  return LatticeWithGram(ChangeRing(B * ChangeRing(G, Rationals()) * Transpose(B), Z));
+end function;
+
 // dep now ignored; retained for backward compatibility
 function newTwoNeighbors(L, dep)
   Lambda := [ Parent(L) | ]; 
@@ -49,37 +63,23 @@ function newTwoNeighbors(L, dep)
     gL2 := LocalGenus(L, 2);
     same_genus := func<nb | LocalGenus(nb, 2) eq gL2>;
   end if;
+  // Each line <v> with v.v = 0 mod 4 and v not in the radical of L/2L has two
+  // neighbours, {x in L : (x, v) even} + Z w/2 for w = v and w = v + 2b with
+  // (v, b) odd.  They are built directly: Magma's Neighbor refuses p = 2 on odd
+  // lattices of even determinant ("singular point of quadratic form"), and the
+  // try/catch that used to wrap it dropped every such neighbour.
   for o in O do
     v := L ! o[1].1;
-    if Norm(v) mod 4 eq 0 and not IsZero(v) then
-      // latter check to catch a bug in LineOrbit
-      // now that we have better isomorphism testing, this one is a
-      // serious waste of time.
-      // AdjoinNeighbor(~TA, ~Lambda, Neighbor(L,v,2), dep);
-      try
-        nb := Neighbor(L,v,2);
-        // I believe the issue here is only that sometimes we go from odd to
-        // even and it isn't in the same genus
-        if same_genus(nb) then
-          vprint Genus,2: "adding new lattice";
-          Append(~Lambda,nb);
-        end if;
-      catch e; end try;
-      
-      B := [ b : b in Basis(L) | (v,b) mod 2 eq 1 ];
-      if #B gt 0 then
-        v +:= 2*B[1];
-        // AdjoinNeighbor(~TA, ~Lambda, Neighbor(L,v,2), dep);
-        try
-          nb := Neighbor(L,v,2);
-          if same_genus(nb) then
-            vprint Genus,2: "adding new lattice";
-            Append(~Lambda,nb);
-          end if;
-        catch e;
-        end try;
+    if Norm(v) mod 4 ne 0 or IsZero(v) then continue; end if;
+    B := [ b : b in Basis(L) | (v,b) mod 2 eq 1 ];
+    if #B eq 0 then continue; end if;   // v in the radical of L/2L
+    for w in [v, v + 2*B[1]] do
+      nb := two_neighbour(L, w);
+      if same_genus(nb) then
+        vprint Genus,2: "adding new lattice";
+        Append(~Lambda,nb);
       end if;
-    end if;
+    end for;
   end for;
   return Lambda;
 end function;
